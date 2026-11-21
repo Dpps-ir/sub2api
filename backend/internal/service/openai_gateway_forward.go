@@ -544,6 +544,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			ensureCodexOAuthInstructionsField(decoded)
 			markDecodedModified()
 		} else {
+			dppsPromoteDeveloperPrompt(decoded, s.cfg, isCodexCLI) // DPPS hook
 			codexResult = applyCodexOAuthTransformWithOptions(decoded, codexOAuthTransformOptions{
 				IsCodexCLI:                          isCodexCLI,
 				IsCompact:                           isCompactRequest,

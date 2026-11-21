@@ -91,6 +91,17 @@ Backend, other:
 | `internal/service/openai_account_scheduler.go` | 1 | `s.dppsWaitForStickySlot(...)` in `selectBySessionHash`, right after the first sticky slot attempt (our `dpps_sticky_escape.go`): when the sticky account is full only because its slots are taken (the `concurrency_full` escape), the request first waits for the slot, bounded by `min(gateway.openai_scheduler.dpps_sticky_busy_wait_ms, gateway.scheduling.sticky_session_wait_timeout)` and only while the account's wait queue (`sticky_session_max_waiting`) has room, and returns the acquired slot into upstream's own acquired branch; on no room, timeout or cancel it returns the result unchanged and upstream escapes as before. TTFT and error-rate escapes are untouched. One line. |
 | `internal/config/config.go` | 2 | the field `DppsStickyBusyWaitMs` (`gateway.openai_scheduler.dpps_sticky_busy_wait_ms`, ms) in `GatewayOpenAISchedulerConfig` and its `viper.SetDefault(..., 3000)`. Default 3000: a request whose sticky seat is busy waits at most 3 s for it, then escapes as upstream does. `0` (or a negative value) means no wait, the upstream behaviour. Never above `sticky_session_wait_timeout`. Env: `GATEWAY_OPENAI_SCHEDULER_DPPS_STICKY_BUSY_WAIT_MS`. |
 | `internal/service/setting_update.go` | 2 (changed, not added) | `s.dppsSetMultiple(ctx, updates)` replaces `s.settingRepo.SetMultiple(ctx, updates)` in the two update paths |
+| `internal/service/openai_gateway_forward.go` | 1 | `dppsPromoteDeveloperPrompt(decoded, s.cfg, isCodexCLI)`, placed in the non-bridge OAuth branch just before `applyCodexOAuthTransformWithOptions`: it must run before `extractSystemMessagesFromInput`/`applyInstructions` (which live inside the transform and have no config access), and only there because the Chat-compat bridge sets `SkipDefaultInstructions` |
+| `internal/config/config.go` | 2 | the field `Gateway.DppsDeveloperPromptAsInstructions` and its `viper.SetDefault(..., false)` |
+
+Settings (config, not the admin page): `gateway.dpps_developer_prompt_as_instructions` (bool,
+default **true**; `false` (yaml, or env `GATEWAY_DPPS_DEVELOPER_PROMPT_AS_INSTRUCTIONS=false`) restores the old behaviour). When true, an OpenAI OAuth `/v1/responses` request that has no `instructions`, is not
+from the Codex CLI (`IsCodexOfficialClientByHeaders` or `force_codex_cli`) and carries
+`role:"developer"` input items has those items treated like `role:"system"` ones: their text becomes
+`instructions` (in order) so the Codex persona is not injected. Logic and tests:
+`internal/service/dpps_developer_prompt{,_test}.go`. Default on because it was proven live (2026-11, GPT-6 Luna through
+production, 5+5 requests with an ask_user_question tool and an ambiguous request: client prompt as
+`developer` with the persona injected called ask_user_question 0 of 5 times, as `system` 5 of 5).
 
 Frontend:
 
