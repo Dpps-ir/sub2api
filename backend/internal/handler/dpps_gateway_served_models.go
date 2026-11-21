@@ -11,12 +11,12 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
-// servedModelIDs is the list GET /v1/models serves to a key of this group: the
+// DppsServedModelIDs is the list GET /v1/models serves to a key of this group: the
 // same decisions as GatewayHandler.Models (platform fallback lists, allowlist,
 // composite routing), returned as ids instead of written as a response. The
 // events webhook hashes it, so a change is a change a client would see.
 // A pinned OpenAI Codex manifest is not followed (it lists live upstream models).
-func (h *GatewayHandler) servedModelIDs(ctx context.Context, group *service.Group) []string {
+func (h *GatewayHandler) DppsServedModelIDs(ctx context.Context, group *service.Group) []string {
 	if h == nil || h.gatewayService == nil || group == nil {
 		return nil
 	}
@@ -38,12 +38,12 @@ func (h *GatewayHandler) servedModelIDs(ctx context.Context, group *service.Grou
 		return defaultModelIDsForPlatform(service.PlatformComposite)
 	}
 
-	return servedModelIDsFromAvailable(group, h.gatewayService.GetAvailableModels(ctx, groupID, platform))
+	return dppsServedModelIDsFromAvailable(group, h.gatewayService.GetAvailableModels(ctx, groupID, platform))
 }
 
-// servedModelIDsFromAvailable applies the allowlist and the platform fallback
+// dppsServedModelIDsFromAvailable applies the allowlist and the platform fallback
 // lists to the account-derived list, exactly as GatewayHandler.Models does.
-func servedModelIDsFromAvailable(group *service.Group, available []string) []string {
+func dppsServedModelIDsFromAvailable(group *service.Group, available []string) []string {
 	platform := group.Platform
 	if group.ModelAllowlistEnabled() {
 		return group.ModelAllowlist.FilterForListing(modelListingSource(platform, available, defaultModelIDsForPlatform(platform)))

@@ -393,26 +393,6 @@ func normalizeUpdateGroupInputForSimpleMode(input *UpdateGroupInput) {
 }
 
 func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupInput) (*Group, error) {
-	group, err := s.createGroup(ctx, input)
-	if err == nil && group != nil {
-		EmitChangedEntity(ctx, EventGroupChanged, group.ID, group.Name, "created", nil, groupEventExtra(group))
-	}
-	return group, err
-}
-
-// groupEventExtra is the non-secret model routing detail a group.changed event carries.
-func groupEventExtra(g *Group) map[string]any {
-	d := map[string]any{"platform": g.Platform}
-	if len(g.SupportedModelScopes) > 0 {
-		d["supported_model_scopes"] = g.SupportedModelScopes
-	}
-	if g.DefaultMappedModel != "" {
-		d["default_mapped_model"] = g.DefaultMappedModel
-	}
-	return d
-}
-
-func (s *adminServiceImpl) createGroup(ctx context.Context, input *CreateGroupInput) (*Group, error) {
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple && NormalizeGroupPlatform(input.Platform) == PlatformComposite {
 		return nil, infraerrors.BadRequest("SIMPLE_MODE_GROUP_NOT_BINDABLE", "composite groups are not supported in simple mode")
 	}
@@ -701,6 +681,7 @@ func (s *adminServiceImpl) createGroup(ctx context.Context, input *CreateGroupIn
 		group.AccountCount = int64(len(accountIDsToCopy))
 	}
 
+	s.dppsAfterGroupCreate(ctx, group) // DPPS hook
 	return group, nil
 }
 
@@ -790,14 +771,6 @@ func (s *adminServiceImpl) validateFallbackGroupOnInvalidRequest(ctx context.Con
 }
 
 func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *UpdateGroupInput) (*Group, error) {
-	group, err := s.updateGroup(ctx, id, input)
-	if err == nil && group != nil {
-		EmitChangedEntity(ctx, EventGroupChanged, group.ID, group.Name, "updated", eventChangedFields(input), groupEventExtra(group))
-	}
-	return group, err
-}
-
-func (s *adminServiceImpl) updateGroup(ctx context.Context, id int64, input *UpdateGroupInput) (*Group, error) {
 	group, err := s.groupRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -1200,6 +1173,7 @@ func (s *adminServiceImpl) updateGroup(ctx context.Context, id int64, input *Upd
 		}
 	}
 
+	s.dppsAfterGroupUpdate(ctx, group, input) // DPPS hook
 	return group, nil
 }
 
@@ -1240,20 +1214,7 @@ func (s *adminServiceImpl) DeleteGroupIfEmpty(ctx context.Context, id int64) err
 }
 
 func (s *adminServiceImpl) deleteGroup(ctx context.Context, id int64, requireEmpty bool) error {
-	name := ""
-	if EventWanted(EventGroupChanged) {
-		if g, err := s.groupRepo.GetByIDLite(ctx, id); err == nil && g != nil {
-			name = g.Name
-		}
-	}
-	err := s.deleteGroupInner(ctx, id, requireEmpty)
-	if err == nil {
-		EmitChangedEntity(ctx, EventGroupChanged, id, name, "deleted", nil, nil)
-	}
-	return err
-}
-
-func (s *adminServiceImpl) deleteGroupInner(ctx context.Context, id int64, requireEmpty bool) error {
+	dppsDone := s.dppsBeforeGroupDelete(ctx, id) // DPPS hook
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple {
 		group, err := s.groupRepo.GetByIDLite(ctx, id)
 		if err != nil {
@@ -1306,6 +1267,7 @@ func (s *adminServiceImpl) deleteGroupInner(ctx context.Context, id int64, requi
 		}
 	}
 
+	dppsDone() // DPPS hook
 	return nil
 }
 

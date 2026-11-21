@@ -1,5 +1,6 @@
 export default {
-  eventsWebhook: {
+  dppsEventsWebhook: {
+    nav: '事件 Webhook',
     title: '事件 Webhook',
     description: '将带签名的用量、余额和每日快照事件发送到外部服务，例如 DPPS。',
     loadFailed: '加载事件 Webhook 设置失败',

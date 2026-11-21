@@ -942,10 +942,7 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 		_ = s.rateLimitCacheInvalid.InvalidateAPIKeyRateLimit(ctx, apiKey.ID)
 	}
 
-	if apiKey.Status != originalStatus || fields.ExpiresAt {
-		EmitKeyChanged(ctx, apiKey.UserID, apiKey.ID, apiKey.Name, apiKey.Status, apiKey.ExpiresAt)
-	}
-
+	DppsEmitKeyUpdated(ctx, apiKey, originalStatus, fields.ExpiresAt) // DPPS hook
 	return apiKey, nil
 }
 

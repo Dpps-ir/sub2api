@@ -12,15 +12,17 @@ import (
 )
 
 // Runs the outbox SQL and migration 253 against a real Postgres.
-func TestEventOutboxRepository_Lifecycle(t *testing.T) {
+func TestDppsEventOutboxRepository_Lifecycle(t *testing.T) {
 	ctx := context.Background()
-	repo := NewEventOutboxRepository(integrationDB)
+	repo := NewDppsEventOutboxRepository(integrationDB)
 	prefix := "it-" + time.Now().Format("150405.000000") + "-"
-	t.Cleanup(func() { _, _ = integrationDB.ExecContext(ctx, `DELETE FROM event_outbox WHERE id LIKE $1`, prefix+"%") })
+	t.Cleanup(func() {
+		_, _ = integrationDB.ExecContext(ctx, `DELETE FROM dpps_event_outbox WHERE id LIKE $1`, prefix+"%")
+	})
 
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	rec := func(n string, created time.Time, next time.Time) service.EventOutboxRecord {
-		return service.EventOutboxRecord{ID: prefix + n, Type: "seat.status", Body: []byte(`{"id":"` + prefix + n + `","type":"seat.status","data":{"k":1}}`), CreatedAt: created, NextAttemptAt: next}
+	rec := func(n string, created time.Time, next time.Time) service.DppsEventOutboxRecord {
+		return service.DppsEventOutboxRecord{ID: prefix + n, Type: "seat.status", Body: []byte(`{"id":"` + prefix + n + `","type":"seat.status","data":{"k":1}}`), CreatedAt: created, NextAttemptAt: next}
 	}
 	require.NoError(t, repo.Insert(ctx, rec("a", now.Add(-2*time.Minute), now.Add(-time.Minute))))
 	require.NoError(t, repo.Insert(ctx, rec("a", now, now)), "a repeated id is ignored")
@@ -49,7 +51,7 @@ func TestEventOutboxRepository_Lifecycle(t *testing.T) {
 
 	require.NoError(t, repo.MarkFailed(ctx, prefix+"a", 9, "deadline", now))
 	var status, lastErr string
-	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT status, last_error FROM event_outbox WHERE id = $1`, prefix+"a").Scan(&status, &lastErr))
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT status, last_error FROM dpps_event_outbox WHERE id = $1`, prefix+"a").Scan(&status, &lastErr))
 	require.Equal(t, "failed", status)
 	require.Equal(t, "deadline", lastErr)
 
@@ -57,6 +59,6 @@ func TestEventOutboxRepository_Lifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, n, int64(2), "sent and failed rows older than the cut are pruned")
 	var left int
-	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT count(*) FROM event_outbox WHERE id = $1`, prefix+"later").Scan(&left))
+	require.NoError(t, integrationDB.QueryRowContext(ctx, `SELECT count(*) FROM dpps_event_outbox WHERE id = $1`, prefix+"later").Scan(&left))
 	require.Equal(t, 1, left, "a pending row is never pruned")
 }

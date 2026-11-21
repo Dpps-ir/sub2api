@@ -841,23 +841,6 @@ func formatMaxTokens(max *int) string {
 
 // Create 创建渠道
 func (s *ChannelService) Create(ctx context.Context, input *CreateChannelInput) (*Channel, error) {
-	ch, err := s.create(ctx, input)
-	if err == nil && ch != nil {
-		EmitChangedEntity(ctx, EventChannelChanged, ch.ID, ch.Name, "created", nil, channelEventExtra(ch))
-	}
-	return ch, err
-}
-
-// channelEventExtra is the non-secret mapping and allowlist detail a channel.changed event carries.
-func channelEventExtra(ch *Channel) map[string]any {
-	d := map[string]any{"status": ch.Status, "restrict_models": ch.RestrictModels, "group_ids": ch.GroupIDs}
-	if len(ch.ModelMapping) > 0 {
-		d["model_mapping"] = ch.ModelMapping
-	}
-	return d
-}
-
-func (s *ChannelService) create(ctx context.Context, input *CreateChannelInput) (*Channel, error) {
 	exists, err := s.repo.ExistsByName(ctx, input.Name)
 	if err != nil {
 		return nil, fmt.Errorf("check channel exists: %w", err)
@@ -903,6 +886,7 @@ func (s *ChannelService) create(ctx context.Context, input *CreateChannelInput) 
 		return nil, err
 	}
 	created.normalizeBillingModelSource()
+	s.dppsAfterChannelCreate(ctx, created) // DPPS hook
 	return created, nil
 }
 
@@ -919,14 +903,6 @@ func (s *ChannelService) GetByID(ctx context.Context, id int64) (*Channel, error
 
 // Update 更新渠道
 func (s *ChannelService) Update(ctx context.Context, id int64, input *UpdateChannelInput) (*Channel, error) {
-	ch, err := s.update(ctx, id, input)
-	if err == nil && ch != nil {
-		EmitChangedEntity(ctx, EventChannelChanged, ch.ID, ch.Name, "updated", eventChangedFields(input), channelEventExtra(ch))
-	}
-	return ch, err
-}
-
-func (s *ChannelService) update(ctx context.Context, id int64, input *UpdateChannelInput) (*Channel, error) {
 	channel, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get channel: %w", err)
@@ -957,6 +933,7 @@ func (s *ChannelService) update(ctx context.Context, id int64, input *UpdateChan
 		return nil, err
 	}
 	updated.normalizeBillingModelSource()
+	s.dppsAfterChannelUpdate(ctx, updated, input) // DPPS hook
 	return updated, nil
 }
 
@@ -1117,20 +1094,7 @@ func (s *ChannelService) invalidateAuthCacheForGroups(ctx context.Context, group
 
 // Delete 删除渠道
 func (s *ChannelService) Delete(ctx context.Context, id int64) error {
-	name := ""
-	if EventWanted(EventChannelChanged) {
-		if ch, err := s.repo.GetByID(ctx, id); err == nil && ch != nil {
-			name = ch.Name
-		}
-	}
-	err := s.deleteChannel(ctx, id)
-	if err == nil {
-		EmitChangedEntity(ctx, EventChannelChanged, id, name, "deleted", nil, nil)
-	}
-	return err
-}
-
-func (s *ChannelService) deleteChannel(ctx context.Context, id int64) error {
+	dppsDone := s.dppsBeforeChannelDelete(ctx, id) // DPPS hook
 	groupIDs, err := s.repo.GetGroupIDs(ctx, id)
 	if err != nil {
 		slog.Warn("failed to get group IDs before delete", "channel_id", id, "error", err)
@@ -1143,6 +1107,7 @@ func (s *ChannelService) deleteChannel(ctx context.Context, id int64) error {
 	s.invalidateCache()
 	s.invalidateAuthCacheForGroups(ctx, groupIDs)
 
+	dppsDone() // DPPS hook
 	return nil
 }
 

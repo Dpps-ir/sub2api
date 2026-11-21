@@ -7,7 +7,7 @@ import settings from './settings'
 import audit from './audit'
 import promptAudit from './promptAudit'
 import plugins from './plugins'
-import eventsWebhook from './eventsWebhook'
+import dppsEventsWebhook from './dppsEventsWebhook' // DPPS hook
 
 export default {
   ...overview,
@@ -19,5 +19,5 @@ export default {
   ...audit,
   ...promptAudit,
   ...plugins,
-  ...eventsWebhook,
+  ...dppsEventsWebhook, // DPPS hook
 }

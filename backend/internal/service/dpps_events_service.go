@@ -25,41 +25,41 @@ import (
 )
 
 const (
-	settingKeyEventsWebhookConfig = "events_webhook_config"
-	settingKeyEventsWebhookState  = "events_webhook_state"
+	dppsSettingKeyEventsWebhookConfig = "dpps_events_webhook_config"
+	dppsSettingKeyEventsWebhookState  = "dpps_events_webhook_state"
 
-	eventsLeaderLockKey = "events:webhook:sender:leader"
-	eventsLeaderTTL     = 60 * time.Second
+	dppsEventsLeaderLockKey = "dpps:events:webhook:sender:leader"
+	dppsEventsLeaderTTL     = 60 * time.Second
 
-	eventsRetryBase     = 10 * time.Second
-	eventsRetryMax      = time.Hour
-	eventsRetryDeadline = 24 * time.Hour
-	eventsSendTimeout   = 10 * time.Second
-	eventsTickInterval  = 5 * time.Second
-	eventsConfigTTL     = 15 * time.Second
-	eventsBatchSize     = 50
-	eventsPruneAfter    = 7 * 24 * time.Hour
-	eventsLimitedMerge  = time.Minute
-	eventsModelsRecheck = 30 * time.Minute
-	// eventsModelsSettle waits out the gateway's 15 s model-list cache so a check
+	dppsEventsRetryBase     = 10 * time.Second
+	dppsEventsRetryMax      = time.Hour
+	dppsEventsRetryDeadline = 24 * time.Hour
+	dppsEventsSendTimeout   = 10 * time.Second
+	dppsEventsTickInterval  = 5 * time.Second
+	dppsEventsConfigTTL     = 15 * time.Second
+	dppsEventsBatchSize     = 50
+	dppsEventsPruneAfter    = 7 * 24 * time.Hour
+	dppsEventsLimitedMerge  = time.Minute
+	dppsEventsModelsRecheck = 30 * time.Minute
+	// dppsEventsModelsSettle waits out the gateway's 15 s model-list cache so a check
 	// after an edit never reads the list from before it.
-	eventsModelsSettle = 20 * time.Second
-	eventsMaxBodyBytes = 512 * 1024
+	dppsEventsModelsSettle = 20 * time.Second
+	dppsEventsMaxBodyBytes = 512 * 1024
 
-	// EventSignatureHeader and EventIDHeader are the two headers every POST carries.
-	EventSignatureHeader = "X-Event-Signature"
-	EventIDHeader        = "X-Event-Id"
+	// DppsEventSignatureHeader and DppsEventIDHeader are the two headers every POST carries.
+	DppsEventSignatureHeader = "X-Event-Signature"
+	DppsEventIDHeader        = "X-Event-Id"
 )
 
 var (
-	ErrEventsWebhookURLInvalid = errors.New("events webhook url must be https and must not point at a private address")
-	ErrEventsSnapshotTime      = errors.New("snapshot_time_utc must be HH:MM (UTC) or empty")
-	ErrEventsUnknownType       = errors.New("unknown event type")
+	ErrDppsEventsWebhookURLInvalid = errors.New("events webhook url must be https and must not point at a private address")
+	ErrDppsEventsSnapshotTime      = errors.New("snapshot_time_utc must be HH:MM (UTC) or empty")
+	ErrDppsEventsUnknownType       = errors.New("unknown event type")
 )
 
-// EventsWebhookConfig is the admin-editable configuration. Off by default.
+// DppsEventsWebhookConfig is the admin-editable configuration. Off by default.
 // Secret is encrypted at rest and never returned by Get.
-type EventsWebhookConfig struct {
+type DppsEventsWebhookConfig struct {
 	Enabled          bool     `json:"enabled"`
 	URL              string   `json:"url"`
 	Secret           string   `json:"secret,omitempty"`
@@ -69,8 +69,8 @@ type EventsWebhookConfig struct {
 	BalanceUserIDs   []int64  `json:"balance_user_ids"`  // users watched for balance.low / balance.changed
 }
 
-// EventOutboxRecord is one row of the event_outbox table.
-type EventOutboxRecord struct {
+// DppsEventOutboxRecord is one row of the dpps_event_outbox table.
+type DppsEventOutboxRecord struct {
 	ID            string
 	Type          string
 	Body          []byte
@@ -79,56 +79,56 @@ type EventOutboxRecord struct {
 	Attempts      int
 }
 
-// EventOutboxRepository stores events until they are delivered.
-type EventOutboxRepository interface {
-	Insert(ctx context.Context, rec EventOutboxRecord) error
-	ListDue(ctx context.Context, now time.Time, limit int) ([]EventOutboxRecord, error)
+// DppsEventOutboxRepository stores events until they are delivered.
+type DppsEventOutboxRepository interface {
+	Insert(ctx context.Context, rec DppsEventOutboxRecord) error
+	ListDue(ctx context.Context, now time.Time, limit int) ([]DppsEventOutboxRecord, error)
 	MarkSent(ctx context.Context, id string, now time.Time) error
 	Reschedule(ctx context.Context, id string, attempts int, next time.Time, errClass string) error
 	MarkFailed(ctx context.Context, id string, attempts int, errClass string, now time.Time) error
 	Prune(ctx context.Context, before time.Time) (int64, error)
 }
 
-// EventGroupModels is one group's served model list.
-type EventGroupModels struct {
+// DppsEventGroupModels is one group's served model list.
+type DppsEventGroupModels struct {
 	GroupID int64
 	Name    string
 	Models  []string
 }
 
-// EventsDataSource reads the state the worker needs (names, model lists, balances).
-type EventsDataSource interface {
+// DppsEventsDataSource reads the state the worker needs (names, model lists, balances).
+type DppsEventsDataSource interface {
 	AccountBrief(ctx context.Context, id int64) (map[string]any, bool)
-	GroupModelLists(ctx context.Context) ([]EventGroupModels, error)
+	GroupModelLists(ctx context.Context) ([]DppsEventGroupModels, error)
 	SeatSnapshots(ctx context.Context) ([]map[string]any, error)
 	UserBalance(ctx context.Context, userID int64) (float64, bool)
 	PriceTableHash() string
 }
 
-type eventsGroupState struct {
+type dppsEventsGroupState struct {
 	Hash   string   `json:"hash"`
 	Models []string `json:"models"`
 }
 
-type eventsState struct {
-	Groups          map[string]eventsGroupState `json:"groups"`
-	LastVersion     string                      `json:"last_version"`
-	LastSnapshotDay string                      `json:"last_snapshot_day"`
+type dppsEventsState struct {
+	Groups          map[string]dppsEventsGroupState `json:"groups"`
+	LastVersion     string                          `json:"last_version"`
+	LastSnapshotDay string                          `json:"last_snapshot_day"`
 }
 
-// EventsService is the outgoing events webhook: an EventSink that writes the
+// DppsEventsService is the outgoing events webhook: an DppsEventSink that writes the
 // outbox, plus the leader-locked delivery worker.
-type eventsCfgSnapshot struct {
-	cfg *EventsWebhookConfig
+type dppsEventsCfgSnapshot struct {
+	cfg *DppsEventsWebhookConfig
 	at  time.Time
 }
 
-type EventsService struct {
+type DppsEventsService struct {
 	settingRepo SettingRepository
-	outbox      EventOutboxRepository
+	outbox      DppsEventOutboxRepository
 	encryptor   SecretEncryptor
 	keyReady    func() bool
-	data        EventsDataSource
+	data        DppsEventsDataSource
 	lockCache   LeaderLockCache
 	db          *sql.DB
 	version     string
@@ -140,7 +140,7 @@ type EventsService struct {
 	allowInsecure bool // tests only: skip the https/private-address checks
 	now           func() time.Time
 
-	cfgPtr        atomic.Pointer[eventsCfgSnapshot]
+	cfgPtr        atomic.Pointer[dppsEventsCfgSnapshot]
 	cfgRefreshing atomic.Bool
 	cfgLoadMu     sync.Mutex // only the very first load blocks; readers never wait on the database
 
@@ -156,19 +156,19 @@ type EventsService struct {
 	lastModelsRun time.Time
 }
 
-func NewEventsService(settingRepo SettingRepository, outbox EventOutboxRepository, encryptor SecretEncryptor, keyReady func() bool,
-	data EventsDataSource, lockCache LeaderLockCache, db *sql.DB, version, commit string) *EventsService {
-	s := &EventsService{
+func NewDppsEventsService(settingRepo SettingRepository, outbox DppsEventOutboxRepository, encryptor SecretEncryptor, keyReady func() bool,
+	data DppsEventsDataSource, lockCache LeaderLockCache, db *sql.DB, version, commit string) *DppsEventsService {
+	s := &DppsEventsService{
 		settingRepo: settingRepo, outbox: outbox, encryptor: encryptor, keyReady: keyReady,
 		data: data, lockCache: lockCache, db: db, version: version, commit: commit,
 		instanceID:  uuid.NewString(),
-		leaderTTL:   eventsLeaderTTL,
+		leaderTTL:   dppsEventsLeaderTTL,
 		now:         time.Now,
 		limitedSeen: map[string]time.Time{},
 		stopCh:      make(chan struct{}),
 	}
 	s.httpClient = &http.Client{
-		Timeout:   eventsSendTimeout,
+		Timeout:   dppsEventsSendTimeout,
 		Transport: &http.Transport{DialContext: safeDialContext, TLSHandshakeTimeout: 5 * time.Second, DisableKeepAlives: true},
 		// A receiver must answer directly: a redirect could point somewhere unvetted.
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
@@ -178,8 +178,8 @@ func NewEventsService(settingRepo SettingRepository, outbox EventOutboxRepositor
 
 // ---- signature -------------------------------------------------------------
 
-// SignEventBody returns "t=<unix>,v1=<hex HMAC-SHA256 over "t.body">".
-func SignEventBody(secret string, ts time.Time, body []byte) string {
+// DppsSignEventBody returns "t=<unix>,v1=<hex HMAC-SHA256 over "t.body">".
+func DppsSignEventBody(secret string, ts time.Time, body []byte) string {
 	t := strconv.FormatInt(ts.Unix(), 10)
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(t))
@@ -188,9 +188,9 @@ func SignEventBody(secret string, ts time.Time, body []byte) string {
 	return "t=" + t + ",v1=" + hex.EncodeToString(mac.Sum(nil))
 }
 
-// VerifyEventSignature checks a header against a body and secret and rejects a
+// DppsVerifyEventSignature checks a header against a body and secret and rejects a
 // timestamp further than tolerance from now. It is what a receiver does.
-func VerifyEventSignature(secret, header string, body []byte, now time.Time, tolerance time.Duration) bool {
+func DppsVerifyEventSignature(secret, header string, body []byte, now time.Time, tolerance time.Duration) bool {
 	var t, v1 string
 	for _, part := range strings.Split(header, ",") {
 		k, v, ok := strings.Cut(strings.TrimSpace(part), "=")
@@ -224,26 +224,26 @@ func VerifyEventSignature(secret, header string, body []byte, now time.Time, tol
 
 // ---- configuration ---------------------------------------------------------
 
-func validateEventsWebhookURL(raw string) error {
+func dppsValidateEventsWebhookURL(raw string) error {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" {
-		return ErrEventsWebhookURLInvalid
+		return ErrDppsEventsWebhookURLInvalid
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), monitorEndpointResolveTimeout)
 	defer cancel()
 	blocked, err := isPrivateOrLoopbackHost(ctx, u.Hostname())
 	if err != nil || blocked {
-		return ErrEventsWebhookURLInvalid
+		return ErrDppsEventsWebhookURLInvalid
 	}
 	return nil
 }
 
-func normalizeEventsConfig(in *EventsWebhookConfig) error {
+func dppsNormalizeEventsConfig(in *DppsEventsWebhookConfig) error {
 	in.URL = strings.TrimSpace(in.URL)
 	in.SnapshotTimeUTC = strings.TrimSpace(in.SnapshotTimeUTC)
 	if in.SnapshotTimeUTC != "" {
 		if _, err := time.Parse("15:04", in.SnapshotTimeUTC); err != nil {
-			return ErrEventsSnapshotTime
+			return ErrDppsEventsSnapshotTime
 		}
 	}
 	seen := map[string]bool{}
@@ -253,8 +253,8 @@ func normalizeEventsConfig(in *EventsWebhookConfig) error {
 		if t == "" || seen[t] {
 			continue
 		}
-		if !isKnownEventType(t) {
-			return fmt.Errorf("%w: %s", ErrEventsUnknownType, t)
+		if !dppsIsKnownEventType(t) {
+			return fmt.Errorf("%w: %s", ErrDppsEventsUnknownType, t)
 		}
 		seen[t] = true
 		types = append(types, t)
@@ -270,15 +270,15 @@ func normalizeEventsConfig(in *EventsWebhookConfig) error {
 	return nil
 }
 
-func (s *EventsService) loadConfigRaw(ctx context.Context) (*EventsWebhookConfig, error) {
-	raw, err := s.settingRepo.GetValue(ctx, settingKeyEventsWebhookConfig)
+func (s *DppsEventsService) loadConfigRaw(ctx context.Context) (*DppsEventsWebhookConfig, error) {
+	raw, err := s.settingRepo.GetValue(ctx, dppsSettingKeyEventsWebhookConfig)
 	if err != nil {
 		if errors.Is(err, ErrSettingNotFound) {
-			return &EventsWebhookConfig{}, nil
+			return &DppsEventsWebhookConfig{}, nil
 		}
 		return nil, err
 	}
-	var cfg EventsWebhookConfig
+	var cfg DppsEventsWebhookConfig
 	if strings.TrimSpace(raw) == "" {
 		return &cfg, nil
 	}
@@ -289,7 +289,7 @@ func (s *EventsService) loadConfigRaw(ctx context.Context) (*EventsWebhookConfig
 }
 
 // loadConfigDecrypted reads the stored configuration and decrypts the secret.
-func (s *EventsService) loadConfigDecrypted() (*EventsWebhookConfig, error) {
+func (s *DppsEventsService) loadConfigDecrypted() (*DppsEventsWebhookConfig, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	cfg, err := s.loadConfigRaw(ctx)
@@ -307,21 +307,21 @@ func (s *EventsService) loadConfigDecrypted() (*EventsWebhookConfig, error) {
 }
 
 // refreshConfig reloads the snapshot. On a database error the old one stays.
-func (s *EventsService) refreshConfig() {
+func (s *DppsEventsService) refreshConfig() {
 	cfg, err := s.loadConfigDecrypted()
 	if err != nil {
 		if s.cfgPtr.Load() == nil {
-			s.cfgPtr.Store(&eventsCfgSnapshot{cfg: &EventsWebhookConfig{}, at: s.now()})
+			s.cfgPtr.Store(&dppsEventsCfgSnapshot{cfg: &DppsEventsWebhookConfig{}, at: s.now()})
 		}
 		return
 	}
-	s.cfgPtr.Store(&eventsCfgSnapshot{cfg: cfg, at: s.now()})
+	s.cfgPtr.Store(&dppsEventsCfgSnapshot{cfg: cfg, at: s.now()})
 }
 
 // config returns the cached configuration with the secret decrypted. It runs on
 // request paths (Wants, BalanceWatch), so after the first load it never waits
 // for the database: a stale snapshot is served while one goroutine refreshes it.
-func (s *EventsService) config() *EventsWebhookConfig {
+func (s *DppsEventsService) config() *DppsEventsWebhookConfig {
 	snap := s.cfgPtr.Load()
 	if snap == nil {
 		s.cfgLoadMu.Lock()
@@ -332,7 +332,7 @@ func (s *EventsService) config() *EventsWebhookConfig {
 		s.cfgLoadMu.Unlock()
 		return snap.cfg
 	}
-	if s.now().Sub(snap.at) >= eventsConfigTTL && s.cfgRefreshing.CompareAndSwap(false, true) {
+	if s.now().Sub(snap.at) >= dppsEventsConfigTTL && s.cfgRefreshing.CompareAndSwap(false, true) {
 		go func() {
 			defer s.cfgRefreshing.Store(false)
 			s.refreshConfig()
@@ -341,12 +341,12 @@ func (s *EventsService) config() *EventsWebhookConfig {
 	return snap.cfg
 }
 
-func (s *EventsService) invalidateConfig() {
+func (s *DppsEventsService) invalidateConfig() {
 	s.cfgPtr.Store(nil)
 }
 
 // Get returns the stored configuration without the secret, plus whether one is set.
-func (s *EventsService) Get(ctx context.Context) (*EventsWebhookConfig, bool, error) {
+func (s *DppsEventsService) Get(ctx context.Context) (*DppsEventsWebhookConfig, bool, error) {
 	cfg, err := s.loadConfigRaw(ctx)
 	if err != nil {
 		return nil, false, err
@@ -363,8 +363,8 @@ func (s *EventsService) Get(ctx context.Context) (*EventsWebhookConfig, bool, er
 }
 
 // Update saves the configuration. An empty Secret keeps the stored one.
-func (s *EventsService) Update(ctx context.Context, in EventsWebhookConfig) (*EventsWebhookConfig, error) {
-	if err := normalizeEventsConfig(&in); err != nil {
+func (s *DppsEventsService) Update(ctx context.Context, in DppsEventsWebhookConfig) (*DppsEventsWebhookConfig, error) {
+	if err := dppsNormalizeEventsConfig(&in); err != nil {
 		return nil, err
 	}
 	old, err := s.loadConfigRaw(ctx)
@@ -372,7 +372,7 @@ func (s *EventsService) Update(ctx context.Context, in EventsWebhookConfig) (*Ev
 		return nil, err
 	}
 	if in.URL != "" && !s.allowInsecure {
-		if err := validateEventsWebhookURL(in.URL); err != nil {
+		if err := dppsValidateEventsWebhookURL(in.URL); err != nil {
 			return nil, err
 		}
 	}
@@ -395,7 +395,7 @@ func (s *EventsService) Update(ctx context.Context, in EventsWebhookConfig) (*Ev
 	if err != nil {
 		return nil, err
 	}
-	if err := s.settingRepo.Set(ctx, settingKeyEventsWebhookConfig, string(data)); err != nil {
+	if err := s.settingRepo.Set(ctx, dppsSettingKeyEventsWebhookConfig, string(data)); err != nil {
 		return nil, err
 	}
 	s.invalidateConfig()
@@ -403,9 +403,9 @@ func (s *EventsService) Update(ctx context.Context, in EventsWebhookConfig) (*Ev
 	return &in, nil
 }
 
-// ---- EventSink -------------------------------------------------------------
+// ---- DppsEventSink -------------------------------------------------------------
 
-func (cfg *EventsWebhookConfig) wants(t string) bool {
+func (cfg *DppsEventsWebhookConfig) wants(t string) bool {
 	if !cfg.Enabled || cfg.URL == "" || cfg.Secret == "" {
 		return false
 	}
@@ -420,18 +420,18 @@ func (cfg *EventsWebhookConfig) wants(t string) bool {
 	return false
 }
 
-func (s *EventsService) Wants(t string) bool { return s.config().wants(t) }
+func (s *DppsEventsService) Wants(t string) bool { return s.config().wants(t) }
 
 // Emit writes one event to the outbox. It never returns an error: a failure is
 // logged and the daily snapshot covers the gap.
-func (s *EventsService) Emit(ctx context.Context, eventType string, data map[string]any) {
+func (s *DppsEventsService) Emit(ctx context.Context, eventType string, data map[string]any) {
 	if !s.Wants(eventType) {
 		return
 	}
 	if ctx == nil || ctx.Err() != nil {
 		ctx = context.Background()
 	}
-	if eventType == EventSeatLimited && s.mergeLimited(data) {
+	if eventType == DppsEventSeatLimited && s.mergeLimited(data) {
 		return
 	}
 	if id, ok := data["account_id"].(int64); ok && s.data != nil {
@@ -453,18 +453,18 @@ func (s *EventsService) Emit(ctx context.Context, eventType string, data map[str
 
 // mergeLimited reports true when the same seat was already announced limited
 // (same kind) within the merge window.
-func (s *EventsService) mergeLimited(data map[string]any) bool {
+func (s *DppsEventsService) mergeLimited(data map[string]any) bool {
 	key := fmt.Sprintf("%v|%v", data["account_id"], data["kind"])
 	now := s.now()
 	s.mergeMu.Lock()
 	defer s.mergeMu.Unlock()
-	if last, ok := s.limitedSeen[key]; ok && now.Sub(last) < eventsLimitedMerge {
+	if last, ok := s.limitedSeen[key]; ok && now.Sub(last) < dppsEventsLimitedMerge {
 		return true
 	}
 	s.limitedSeen[key] = now
 	if len(s.limitedSeen) > 4096 {
 		for k, t := range s.limitedSeen {
-			if now.Sub(t) > eventsLimitedMerge {
+			if now.Sub(t) > dppsEventsLimitedMerge {
 				delete(s.limitedSeen, k)
 			}
 		}
@@ -472,21 +472,21 @@ func (s *EventsService) mergeLimited(data map[string]any) bool {
 	return false
 }
 
-// eventKeyField is an internal key an emit point may set: events with the same
+// dppsEventKeyField is an internal key an emit point may set: events with the same
 // key get the same id, so two replicas reporting the same crossing write one
 // outbox row (the insert ignores a repeated id).
-const eventKeyField = "_event_key"
+const dppsEventKeyField = "_event_key"
 
-var eventIDNamespace = uuid.MustParse("6f1a2d7e-3b54-4c1e-9a8d-5e2b7c0d41aa")
+var dppsEventIDNamespace = uuid.MustParse("6f1a2d7e-3b54-4c1e-9a8d-5e2b7c0d41aa")
 
-func (s *EventsService) enqueue(ctx context.Context, eventType string, data map[string]any) error {
+func (s *DppsEventsService) enqueue(ctx context.Context, eventType string, data map[string]any) error {
 	now := s.now().UTC()
 	id := uuid.NewString()
-	if key, ok := data[eventKeyField].(string); ok && key != "" {
-		id = uuid.NewSHA1(eventIDNamespace, []byte(eventType+"|"+key)).String()
+	if key, ok := data[dppsEventKeyField].(string); ok && key != "" {
+		id = uuid.NewSHA1(dppsEventIDNamespace, []byte(eventType+"|"+key)).String()
 		clean := make(map[string]any, len(data))
 		for k, v := range data {
-			if k != eventKeyField {
+			if k != dppsEventKeyField {
 				clean[k] = v
 			}
 		}
@@ -497,25 +497,25 @@ func (s *EventsService) enqueue(ctx context.Context, eventType string, data map[
 		"type":            eventType,
 		"at":              now.Format(time.RFC3339),
 		"sub2api_version": s.version,
-		"data":            sanitizeEventData(data),
+		"data":            dppsSanitizeEventData(data),
 	}
 	body, err := json.Marshal(env)
 	if err != nil {
 		return err
 	}
-	if len(body) > eventsMaxBodyBytes {
+	if len(body) > dppsEventsMaxBodyBytes {
 		env["data"] = map[string]any{"truncated": true}
 		if body, err = json.Marshal(env); err != nil {
 			return err
 		}
 	}
-	return s.outbox.Insert(ctx, EventOutboxRecord{
+	return s.outbox.Insert(ctx, DppsEventOutboxRecord{
 		ID: env["id"].(string), Type: eventType, Body: body, CreatedAt: now, NextAttemptAt: now,
 	})
 }
 
 // BalanceWatch reports the threshold when userID is a watched user.
-func (s *EventsService) BalanceWatch(userID int64) (float64, bool) {
+func (s *DppsEventsService) BalanceWatch(userID int64) (float64, bool) {
 	cfg := s.config()
 	for _, id := range cfg.BalanceUserIDs {
 		if id == userID {
@@ -527,29 +527,29 @@ func (s *EventsService) BalanceWatch(userID int64) (float64, bool) {
 
 // ScheduleModelsCheck asks the worker to re-hash every group's served list once
 // the gateway's list cache has had time to expire.
-func (s *EventsService) ScheduleModelsCheck() {
+func (s *DppsEventsService) ScheduleModelsCheck() {
 	s.modelsDirtyAt.Store(s.now().UnixNano())
 }
 
 // ---- optional sink capabilities, reached through helpers ---------------------
 
-type eventsBalanceWatcher interface {
+type dppsEventsBalanceWatcher interface {
 	BalanceWatch(userID int64) (float64, bool)
 }
 
-type eventsModelsScheduler interface{ ScheduleModelsCheck() }
+type dppsEventsModelsScheduler interface{ ScheduleModelsCheck() }
 
-// EventsModelsMayHaveChanged is called after account, group or channel edits.
-func EventsModelsMayHaveChanged() {
-	if m, ok := currentEventSink().(eventsModelsScheduler); ok {
+// DppsEventsModelsMayHaveChanged is called after account, group or channel edits.
+func DppsEventsModelsMayHaveChanged() {
+	if m, ok := dppsCurrentEventSink().(dppsEventsModelsScheduler); ok {
 		m.ScheduleModelsCheck()
 	}
 }
 
-// EmitBalanceLowIfCrossed is called after a committed balance change. It emits
+// DppsEmitBalanceLowIfCrossed is called after a committed balance change. It emits
 // balance.low when a watched user's balance crosses below the threshold.
-func EmitBalanceLowIfCrossed(ctx context.Context, userID int64, oldBalance, newBalance float64) {
-	w, ok := currentEventSink().(eventsBalanceWatcher)
+func DppsEmitBalanceLowIfCrossed(ctx context.Context, userID int64, oldBalance, newBalance float64) {
+	w, ok := dppsCurrentEventSink().(dppsEventsBalanceWatcher)
 	if !ok {
 		return
 	}
@@ -557,12 +557,12 @@ func EmitBalanceLowIfCrossed(ctx context.Context, userID int64, oldBalance, newB
 	if !watched || threshold <= 0 || !(oldBalance >= threshold && newBalance < threshold) {
 		return
 	}
-	EmitEvent(ctx, EventBalanceLow, map[string]any{"user_id": userID, "balance": newBalance, "threshold": threshold})
+	DppsEmitEvent(ctx, DppsEventBalanceLow, map[string]any{"user_id": userID, "balance": newBalance, "threshold": threshold})
 }
 
 // ---- worker ----------------------------------------------------------------
 
-func (s *EventsService) Start() {
+func (s *DppsEventsService) Start() {
 	if s == nil {
 		return
 	}
@@ -572,7 +572,7 @@ func (s *EventsService) Start() {
 	})
 }
 
-func (s *EventsService) Stop() {
+func (s *DppsEventsService) Stop() {
 	if s == nil {
 		return
 	}
@@ -584,10 +584,10 @@ func (s *EventsService) Stop() {
 	s.wg.Wait()
 }
 
-func (s *EventsService) run() {
+func (s *DppsEventsService) run() {
 	defer s.wg.Done()
-	s.modelsDirtyAt.Store(s.now().Add(-eventsModelsSettle).UnixNano()) // "and at start": due at once
-	t := time.NewTicker(eventsTickInterval)
+	s.modelsDirtyAt.Store(s.now().Add(-dppsEventsModelsSettle).UnixNano()) // "and at start": due at once
+	t := time.NewTicker(dppsEventsTickInterval)
 	defer t.Stop()
 	for {
 		select {
@@ -604,13 +604,13 @@ func (s *EventsService) run() {
 // RunOnce is one worker cycle: take the leader lock, run the checks, deliver.
 // Everything done under the lock has a budget of half its lifetime, so the lock
 // can never expire while this replica is still sending (two senders at once).
-func (s *EventsService) RunOnce(ctx context.Context) {
+func (s *DppsEventsService) RunOnce(ctx context.Context) {
 	s.refreshConfig() // the worker is off the request path: always read fresh
 	cfg := s.config()
 	if !cfg.Enabled || cfg.URL == "" || cfg.Secret == "" {
 		return
 	}
-	release, ok := tryAcquireSingletonLeaderLock(ctx, s.lockCache, s.db, eventsLeaderLockKey, s.instanceID, s.leaderTTL)
+	release, ok := tryAcquireSingletonLeaderLock(ctx, s.lockCache, s.db, dppsEventsLeaderLockKey, s.instanceID, s.leaderTTL)
 	if !ok {
 		return
 	}
@@ -622,25 +622,25 @@ func (s *EventsService) RunOnce(ctx context.Context) {
 	s.maybeCheckModels(work)
 	s.maybeSnapshot(work, cfg)
 	s.deliverDue(work, cfg)
-	if _, err := s.outbox.Prune(work, s.now().Add(-eventsPruneAfter)); err != nil {
+	if _, err := s.outbox.Prune(work, s.now().Add(-dppsEventsPruneAfter)); err != nil {
 		logger.LegacyPrintf("service.events", "[Events] prune failed: %v", err)
 	}
 }
 
-func (s *EventsService) loadState(ctx context.Context) eventsState {
-	st := eventsState{Groups: map[string]eventsGroupState{}}
-	if raw, err := s.settingRepo.GetValue(ctx, settingKeyEventsWebhookState); err == nil && raw != "" {
+func (s *DppsEventsService) loadState(ctx context.Context) dppsEventsState {
+	st := dppsEventsState{Groups: map[string]dppsEventsGroupState{}}
+	if raw, err := s.settingRepo.GetValue(ctx, dppsSettingKeyEventsWebhookState); err == nil && raw != "" {
 		_ = json.Unmarshal([]byte(raw), &st)
 	}
 	if st.Groups == nil {
-		st.Groups = map[string]eventsGroupState{}
+		st.Groups = map[string]dppsEventsGroupState{}
 	}
 	return st
 }
 
-func (s *EventsService) saveState(ctx context.Context, st eventsState) {
+func (s *DppsEventsService) saveState(ctx context.Context, st dppsEventsState) {
 	if raw, err := json.Marshal(st); err == nil {
-		if err := s.settingRepo.Set(ctx, settingKeyEventsWebhookState, string(raw)); err != nil {
+		if err := s.settingRepo.Set(ctx, dppsSettingKeyEventsWebhookState, string(raw)); err != nil {
 			logger.LegacyPrintf("service.events", "[Events] save state failed: %v", err)
 		}
 	}
@@ -648,7 +648,7 @@ func (s *EventsService) saveState(ctx context.Context, st eventsState) {
 
 // checkVersion emits system.started once per process and system.version_changed
 // when the version differs from the last one sent.
-func (s *EventsService) checkVersion(ctx context.Context) {
+func (s *DppsEventsService) checkVersion(ctx context.Context) {
 	if s.startedSent {
 		return
 	}
@@ -657,14 +657,14 @@ func (s *EventsService) checkVersion(ctx context.Context) {
 	if s.commit != "" {
 		data["commit"] = s.commit
 	}
-	s.Emit(ctx, EventSystemStarted, data)
+	s.Emit(ctx, DppsEventSystemStarted, data)
 	st := s.loadState(ctx)
 	if st.LastVersion != "" && st.LastVersion != s.version {
 		d := map[string]any{"version": s.version, "previous_version": st.LastVersion}
 		if s.commit != "" {
 			d["commit"] = s.commit
 		}
-		s.Emit(ctx, EventVersionChanged, d)
+		s.Emit(ctx, DppsEventVersionChanged, d)
 	}
 	if st.LastVersion != s.version {
 		st.LastVersion = s.version
@@ -672,12 +672,12 @@ func (s *EventsService) checkVersion(ctx context.Context) {
 	}
 }
 
-func hashModelList(models []string) string {
+func dppsHashModelList(models []string) string {
 	h := sha256.Sum256([]byte(strings.Join(models, "\n")))
 	return hex.EncodeToString(h[:])
 }
 
-func sortedUnique(in []string) []string {
+func dppsSortedUnique(in []string) []string {
 	set := map[string]struct{}{}
 	for _, m := range in {
 		if m != "" {
@@ -692,7 +692,7 @@ func sortedUnique(in []string) []string {
 	return out
 }
 
-func diffSorted(old, cur []string) (added, removed []string) {
+func dppsDiffSorted(old, cur []string) (added, removed []string) {
 	o := map[string]struct{}{}
 	for _, m := range old {
 		o[m] = struct{}{}
@@ -712,10 +712,10 @@ func diffSorted(old, cur []string) (added, removed []string) {
 	return added, removed
 }
 
-func (s *EventsService) maybeCheckModels(ctx context.Context) {
+func (s *DppsEventsService) maybeCheckModels(ctx context.Context) {
 	dirtyAt := s.modelsDirtyAt.Load()
-	dirty := dirtyAt != 0 && s.now().Sub(time.Unix(0, dirtyAt)) >= eventsModelsSettle
-	if !dirty && !s.lastModelsRun.IsZero() && s.now().Sub(s.lastModelsRun) < eventsModelsRecheck {
+	dirty := dirtyAt != 0 && s.now().Sub(time.Unix(0, dirtyAt)) >= dppsEventsModelsSettle
+	if !dirty && !s.lastModelsRun.IsZero() && s.now().Sub(s.lastModelsRun) < dppsEventsModelsRecheck {
 		return
 	}
 	if dirty {
@@ -728,8 +728,8 @@ func (s *EventsService) maybeCheckModels(ctx context.Context) {
 // CheckModels emits models.changed for every group whose served list hash
 // differs from the last one sent. A group seen for the first time reports its
 // whole list as added.
-func (s *EventsService) CheckModels(ctx context.Context) {
-	if s.data == nil || !s.Wants(EventModelsChanged) {
+func (s *DppsEventsService) CheckModels(ctx context.Context) {
+	if s.data == nil || !s.Wants(DppsEventModelsChanged) {
 		return
 	}
 	groups, err := s.data.GroupModelLists(ctx)
@@ -743,18 +743,18 @@ func (s *EventsService) CheckModels(ctx context.Context) {
 	for _, g := range groups {
 		key := strconv.FormatInt(g.GroupID, 10)
 		seen[key] = true
-		models := sortedUnique(g.Models)
-		h := hashModelList(models)
+		models := dppsSortedUnique(g.Models)
+		h := dppsHashModelList(models)
 		prev, had := st.Groups[key]
 		if had && prev.Hash == h {
 			continue
 		}
-		added, removed := diffSorted(prev.Models, models)
-		s.Emit(ctx, EventModelsChanged, map[string]any{
+		added, removed := dppsDiffSorted(prev.Models, models)
+		s.Emit(ctx, DppsEventModelsChanged, map[string]any{
 			"group_id": g.GroupID, "group_name": g.Name,
-			"added": nonNil(added), "removed": nonNil(removed), "models": models,
+			"added": dppsNonNil(added), "removed": dppsNonNil(removed), "models": models,
 		})
-		st.Groups[key] = eventsGroupState{Hash: h, Models: models}
+		st.Groups[key] = dppsEventsGroupState{Hash: h, Models: models}
 		changed = true
 	}
 	for key := range st.Groups {
@@ -768,15 +768,15 @@ func (s *EventsService) CheckModels(ctx context.Context) {
 	}
 }
 
-func nonNil(in []string) []string {
+func dppsNonNil(in []string) []string {
 	if in == nil {
 		return []string{}
 	}
 	return in
 }
 
-func (s *EventsService) maybeSnapshot(ctx context.Context, cfg *EventsWebhookConfig) {
-	if cfg.SnapshotTimeUTC == "" || !cfg.wants(EventSnapshotDaily) || s.data == nil {
+func (s *DppsEventsService) maybeSnapshot(ctx context.Context, cfg *DppsEventsWebhookConfig) {
+	if cfg.SnapshotTimeUTC == "" || !cfg.wants(DppsEventSnapshotDaily) || s.data == nil {
 		return
 	}
 	hm, err := time.Parse("15:04", cfg.SnapshotTimeUTC)
@@ -800,7 +800,7 @@ func (s *EventsService) maybeSnapshot(ctx context.Context, cfg *EventsWebhookCon
 
 // EmitSnapshot writes one snapshot.daily event: every seat, every group's list,
 // the version, the price-table hash and the watched balances.
-func (s *EventsService) EmitSnapshot(ctx context.Context, cfg *EventsWebhookConfig) {
+func (s *DppsEventsService) EmitSnapshot(ctx context.Context, cfg *DppsEventsWebhookConfig) {
 	data := map[string]any{"version": s.version}
 	if seats, err := s.data.SeatSnapshots(ctx); err == nil {
 		data["seats"] = seats
@@ -808,7 +808,7 @@ func (s *EventsService) EmitSnapshot(ctx context.Context, cfg *EventsWebhookConf
 	if groups, err := s.data.GroupModelLists(ctx); err == nil {
 		list := make([]map[string]any, 0, len(groups))
 		for _, g := range groups {
-			list = append(list, map[string]any{"group_id": g.GroupID, "group_name": g.Name, "models": sortedUnique(g.Models)})
+			list = append(list, map[string]any{"group_id": g.GroupID, "group_name": g.Name, "models": dppsSortedUnique(g.Models)})
 		}
 		data["groups"] = list
 	}
@@ -820,25 +820,25 @@ func (s *EventsService) EmitSnapshot(ctx context.Context, cfg *EventsWebhookConf
 		}
 	}
 	data["balances"] = balances
-	s.Emit(ctx, EventSnapshotDaily, data)
+	s.Emit(ctx, DppsEventSnapshotDaily, data)
 }
 
 // ---- delivery --------------------------------------------------------------
 
-func eventBackoff(attempts int) time.Duration {
-	d := eventsRetryBase
-	for i := 1; i < attempts && d < eventsRetryMax; i++ {
+func dppsEventBackoff(attempts int) time.Duration {
+	d := dppsEventsRetryBase
+	for i := 1; i < attempts && d < dppsEventsRetryMax; i++ {
 		d *= 2
 	}
-	if d > eventsRetryMax {
-		d = eventsRetryMax
+	if d > dppsEventsRetryMax {
+		d = dppsEventsRetryMax
 	}
 	return d
 }
 
-func (s *EventsService) deliverDue(ctx context.Context, cfg *EventsWebhookConfig) {
+func (s *DppsEventsService) deliverDue(ctx context.Context, cfg *DppsEventsWebhookConfig) {
 	now := s.now()
-	due, err := s.outbox.ListDue(ctx, now, eventsBatchSize)
+	due, err := s.outbox.ListDue(ctx, now, dppsEventsBatchSize)
 	if err != nil {
 		logger.LegacyPrintf("service.events", "[Events] list due failed: %v", err)
 		return
@@ -847,7 +847,7 @@ func (s *EventsService) deliverDue(ctx context.Context, cfg *EventsWebhookConfig
 		if ctx.Err() != nil {
 			return
 		}
-		if now.Sub(rec.CreatedAt) > eventsRetryDeadline {
+		if now.Sub(rec.CreatedAt) > dppsEventsRetryDeadline {
 			_ = s.outbox.MarkFailed(ctx, rec.ID, rec.Attempts, "deadline", now)
 			continue
 		}
@@ -858,8 +858,8 @@ func (s *EventsService) deliverDue(ctx context.Context, cfg *EventsWebhookConfig
 			continue
 		}
 		bg := context.WithoutCancel(ctx)
-		next := s.now().Add(eventBackoff(attempts))
-		if next.Sub(rec.CreatedAt) > eventsRetryDeadline {
+		next := s.now().Add(dppsEventBackoff(attempts))
+		if next.Sub(rec.CreatedAt) > dppsEventsRetryDeadline {
 			_ = s.outbox.MarkFailed(bg, rec.ID, attempts, errClass, s.now())
 		} else {
 			_ = s.outbox.Reschedule(bg, rec.ID, attempts, next, errClass)
@@ -873,21 +873,21 @@ func (s *EventsService) deliverDue(ctx context.Context, cfg *EventsWebhookConfig
 
 // send POSTs one event and returns an error class ("" on success). Only a class
 // is kept, never the receiver's text.
-func (s *EventsService) send(ctx context.Context, cfg *EventsWebhookConfig, rec EventOutboxRecord) string {
+func (s *DppsEventsService) send(ctx context.Context, cfg *DppsEventsWebhookConfig, rec DppsEventOutboxRecord) string {
 	if !s.allowInsecure {
-		if err := validateEventsWebhookURL(cfg.URL); err != nil {
+		if err := dppsValidateEventsWebhookURL(cfg.URL); err != nil {
 			return "url_blocked"
 		}
 	}
-	rctx, cancel := context.WithTimeout(ctx, eventsSendTimeout)
+	rctx, cancel := context.WithTimeout(ctx, dppsEventsSendTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(rctx, http.MethodPost, cfg.URL, bytes.NewReader(rec.Body))
 	if err != nil {
 		return "bad_request"
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(EventIDHeader, rec.ID)
-	req.Header.Set(EventSignatureHeader, SignEventBody(cfg.Secret, s.now(), rec.Body))
+	req.Header.Set(DppsEventIDHeader, rec.ID)
+	req.Header.Set(DppsEventSignatureHeader, DppsSignEventBody(cfg.Secret, s.now(), rec.Body))
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		var ne net.Error

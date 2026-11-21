@@ -83,7 +83,7 @@ func RegisterAdminRoutes(
 
 		// 数据库备份恢复
 		registerBackupRoutes(admin, h, stepUpAuth)
-		registerEventsWebhookRoutes(admin, h, stepUpAuth)
+		registerDppsAdminRoutes(admin, stepUpAuth) // DPPS hook
 
 		// 运维监控（Ops）
 		registerOpsRoutes(admin, h)
@@ -640,16 +640,6 @@ func registerDataManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers, s
 		dataManagement.POST("/backups", gin.HandlerFunc(stepUpAuth), h.Admin.DataManagement.CreateBackupJob)
 		dataManagement.GET("/backups", h.Admin.DataManagement.ListBackupJobs)
 		dataManagement.GET("/backups/:job_id", h.Admin.DataManagement.GetBackupJob)
-	}
-}
-
-// registerEventsWebhookRoutes: the outgoing events webhook settings. Changing the
-// target can send account state to an outside host, so a write needs step-up 2FA.
-func registerEventsWebhookRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
-	g := admin.Group("/events-webhook")
-	{
-		g.GET("", h.Admin.EventsWebhook.Get)
-		g.PUT("", gin.HandlerFunc(stepUpAuth), h.Admin.EventsWebhook.Update)
 	}
 }
 

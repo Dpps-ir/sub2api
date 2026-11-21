@@ -15,25 +15,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// repoEventSink records what the account repository hands to the events webhook.
-type repoEventSink struct {
+// dppsRepoEventSink records what the account repository hands to the events webhook.
+type dppsRepoEventSink struct {
 	mu     sync.Mutex
-	events []repoEvent
+	events []dppsRepoEvent
 }
 
-type repoEvent struct {
+type dppsRepoEvent struct {
 	Type string
 	Data map[string]any
 }
 
-func (s *repoEventSink) Wants(string) bool { return true }
-func (s *repoEventSink) Emit(_ context.Context, t string, d map[string]any) {
+func (s *dppsRepoEventSink) Wants(string) bool { return true }
+func (s *dppsRepoEventSink) Emit(_ context.Context, t string, d map[string]any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.events = append(s.events, repoEvent{t, d})
+	s.events = append(s.events, dppsRepoEvent{t, d})
 }
 
-func (s *repoEventSink) types() []string {
+func (s *dppsRepoEventSink) types() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := []string{}
@@ -43,17 +43,17 @@ func (s *repoEventSink) types() []string {
 	return out
 }
 
-func installRepoEventSink(t *testing.T) *repoEventSink {
+func dppsInstallRepoEventSink(t *testing.T) *dppsRepoEventSink {
 	t.Helper()
-	sink := &repoEventSink{}
-	service.SetEventSink(sink)
-	t.Cleanup(func() { service.SetEventSink(nil) })
+	sink := &dppsRepoEventSink{}
+	service.SetDppsEventSink(sink)
+	t.Cleanup(func() { service.SetDppsEventSink(nil) })
 	return sink
 }
 
-// newEntAccountRepoWithMock builds an account repository whose ent client and raw
+// dppsNewEntAccountRepoWithMock builds an account repository whose ent client and raw
 // SQL executor share one sqlmock connection. Every write is accepted.
-func newEntAccountRepoWithMock(t *testing.T) (*accountRepository, sqlmock.Sqlmock) {
+func dppsNewEntAccountRepoWithMock(t *testing.T) (*accountRepository, sqlmock.Sqlmock) {
 	t.Helper()
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -64,16 +64,25 @@ func newEntAccountRepoWithMock(t *testing.T) (*accountRepository, sqlmock.Sqlmoc
 	return newAccountRepositoryWithSQL(client, db, nil), mock
 }
 
-func expectStatusRead(mock sqlmock.Sqlmock, status string) {
+func dppsExpectStatusRead(mock sqlmock.Sqlmock, status string) {
 	mock.ExpectQuery(`(?s)SELECT .*"status".* FROM "accounts"`).WillReturnRows(sqlmock.NewRows([]string{"status"}).AddRow(status))
 }
 
-func expectAccountWrite(mock sqlmock.Sqlmock) {
+// dppsExpectHeld answers the "does the seat hold a limit or pause" read the clears do first.
+func dppsExpectHeld(mock sqlmock.Sqlmock, held bool) {
+	rows := sqlmock.NewRows([]string{"id"})
+	if held {
+		rows.AddRow(int64(5))
+	}
+	mock.ExpectQuery(`(?s)SELECT .*FROM\s+"?accounts"?`).WillReturnRows(rows)
+}
+
+func dppsExpectAccountWrite(mock sqlmock.Sqlmock) {
 	mock.ExpectExec(`(?s)UPDATE "accounts"`).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec(`(?s)INSERT INTO scheduler_outbox`).WillReturnResult(sqlmock.NewResult(1, 1))
 }
 
-func TestAccountRepository_EntWritesEmitSeatEventsOnce(t *testing.T) {
+func TestDppsAccountRepository_EntWritesEmitSeatEventsOnce(t *testing.T) {
 	until := time.Date(2026, 11, 20, 15, 0, 0, 0, time.UTC)
 	cases := []struct {
 		name string
@@ -84,31 +93,33 @@ func TestAccountRepository_EntWritesEmitSeatEventsOnce(t *testing.T) {
 		{"set error", func(r *accountRepository) error {
 			return r.SetError(context.Background(), 5, "HTTP 401 unauthorized, token abc")
 		},
-			service.EventSeatStatus, map[string]any{"status": service.StatusError, "reason": "auth"}},
+			service.DppsEventSeatStatus, map[string]any{"status": service.StatusError, "reason": "auth"}},
 		{"clear error", func(r *accountRepository) error { return r.ClearError(context.Background(), 5) },
-			service.EventSeatStatus, map[string]any{"status": service.StatusActive}},
+			service.DppsEventSeatStatus, map[string]any{"status": service.StatusActive}},
 		{"rate limited", func(r *accountRepository) error { return r.SetRateLimited(context.Background(), 5, until) },
-			service.EventSeatLimited, map[string]any{"kind": "rate_limit", "until": "2026-11-20T15:00:00Z"}},
+			service.DppsEventSeatLimited, map[string]any{"kind": "rate_limit", "until": "2026-11-20T15:00:00Z"}},
 		{"overloaded", func(r *accountRepository) error { return r.SetOverloaded(context.Background(), 5, until) },
-			service.EventSeatLimited, map[string]any{"kind": "overload", "until": "2026-11-20T15:00:00Z"}},
+			service.DppsEventSeatLimited, map[string]any{"kind": "overload", "until": "2026-11-20T15:00:00Z"}},
 		{"clear rate limit", func(r *accountRepository) error { return r.ClearRateLimit(context.Background(), 5) },
-			service.EventSeatCleared, map[string]any{"kind": "rate_limit"}},
+			service.DppsEventSeatCleared, map[string]any{"kind": "rate_limit"}},
 		{"paused by admin", func(r *accountRepository) error { return r.SetSchedulable(context.Background(), 5, false) },
-			service.EventSeatPaused, map[string]any{"by": "admin"}},
+			service.DppsEventSeatPaused, map[string]any{"by": "admin"}},
 		{"resumed by admin", func(r *accountRepository) error { return r.SetSchedulable(context.Background(), 5, true) },
-			service.EventSeatResumed, map[string]any{"by": "admin"}},
+			service.DppsEventSeatResumed, map[string]any{"by": "admin"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			sink := installRepoEventSink(t)
-			repo, mock := newEntAccountRepoWithMock(t)
+			sink := dppsInstallRepoEventSink(t)
+			repo, mock := dppsNewEntAccountRepoWithMock(t)
 			switch tc.name {
 			case "set error":
-				expectStatusRead(mock, service.StatusActive)
+				dppsExpectStatusRead(mock, service.StatusActive)
 			case "clear error":
-				expectStatusRead(mock, service.StatusError)
+				dppsExpectStatusRead(mock, service.StatusError)
+			case "clear rate limit":
+				dppsExpectHeld(mock, true)
 			}
-			expectAccountWrite(mock)
+			dppsExpectAccountWrite(mock)
 
 			require.NoError(t, tc.run(repo))
 
@@ -124,17 +135,17 @@ func TestAccountRepository_EntWritesEmitSeatEventsOnce(t *testing.T) {
 	}
 }
 
-func TestAccountRepository_FailedWriteEmitsNothing(t *testing.T) {
-	sink := installRepoEventSink(t)
-	repo, mock := newEntAccountRepoWithMock(t)
+func TestDppsAccountRepository_FailedWriteEmitsNothing(t *testing.T) {
+	sink := dppsInstallRepoEventSink(t)
+	repo, mock := dppsNewEntAccountRepoWithMock(t)
 	mock.ExpectExec(`(?s)UPDATE "accounts"`).WillReturnError(sql.ErrConnDone)
 
 	require.Error(t, repo.SetError(context.Background(), 5, "boom"))
 	require.Empty(t, sink.types())
 }
 
-func TestAccountRepository_TempUnschedulableAndClearEmitOnce(t *testing.T) {
-	sink := installRepoEventSink(t)
+func TestDppsAccountRepository_TempUnschedulableAndClearEmitOnce(t *testing.T) {
+	sink := dppsInstallRepoEventSink(t)
 	until := time.Date(2026, 11, 20, 15, 0, 0, 0, time.UTC)
 
 	none := &recordingSQLExecutor{result: rowsAffectedResult(0)}
@@ -144,16 +155,23 @@ func TestAccountRepository_TempUnschedulableAndClearEmitOnce(t *testing.T) {
 	hit := &recordingSQLExecutor{result: rowsAffectedResult(1)}
 	repo := newAccountRepositoryWithSQL(nil, hit, nil)
 	require.NoError(t, repo.SetTempUnschedulable(context.Background(), 5, until, "retry"))
-	require.Equal(t, []string{service.EventSeatLimited}, sink.types())
+	require.Equal(t, []string{service.DppsEventSeatLimited}, sink.types())
 	require.Equal(t, "temp_unschedulable", sink.events[0].Data["kind"])
 	require.NotContains(t, sink.events[0].Data, "reason", "the free-text reason stays inside")
 
-	require.NoError(t, repo.ClearTempUnschedulable(context.Background(), 5))
-	require.Equal(t, []string{service.EventSeatLimited, service.EventSeatCleared}, sink.types())
+	// A seat that holds a pause: the clear reads that first, then writes.
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	mock.ExpectQuery(`(?s)SELECT 1 FROM accounts`).WithArgs(int64(5)).WillReturnRows(sqlmock.NewRows([]string{"?column?"}).AddRow(1))
+	mock.ExpectExec(`(?s)UPDATE accounts`).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`INSERT INTO scheduler_outbox`).WillReturnResult(sqlmock.NewResult(1, 1))
+	require.NoError(t, newAccountRepositoryWithSQL(nil, db, nil).ClearTempUnschedulable(context.Background(), 5))
+	require.Equal(t, []string{service.DppsEventSeatLimited, service.DppsEventSeatCleared}, sink.types())
 }
 
-func TestAccountRepository_AutoPauseEmitsPausedByExpiryPerSeat(t *testing.T) {
-	sink := installRepoEventSink(t)
+func TestDppsAccountRepository_AutoPauseEmitsPausedByExpiryPerSeat(t *testing.T) {
+	sink := dppsInstallRepoEventSink(t)
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
@@ -166,7 +184,7 @@ func TestAccountRepository_AutoPauseEmitsPausedByExpiryPerSeat(t *testing.T) {
 
 	require.NoError(t, err)
 	require.EqualValues(t, 2, n)
-	require.Equal(t, []string{service.EventSeatPaused, service.EventSeatPaused}, sink.types())
+	require.Equal(t, []string{service.DppsEventSeatPaused, service.DppsEventSeatPaused}, sink.types())
 	require.EqualValues(t, 11, sink.events[0].Data["account_id"])
 	require.EqualValues(t, 29, sink.events[1].Data["account_id"])
 	require.Equal(t, "expiry", sink.events[0].Data["by"])
@@ -178,35 +196,41 @@ func TestAccountRepository_AutoPauseEmitsPausedByExpiryPerSeat(t *testing.T) {
 	require.Empty(t, sink.types())
 }
 
-func TestAccountRepository_DefensiveClearsAndRepeatsEmitNothing(t *testing.T) {
+func TestDppsAccountRepository_DefensiveClearsAndRepeatsEmitNothing(t *testing.T) {
 	t.Run("set error on an account already in error", func(t *testing.T) {
-		sink := installRepoEventSink(t)
-		repo, mock := newEntAccountRepoWithMock(t)
-		expectStatusRead(mock, service.StatusError)
-		expectAccountWrite(mock)
+		sink := dppsInstallRepoEventSink(t)
+		repo, mock := dppsNewEntAccountRepoWithMock(t)
+		dppsExpectStatusRead(mock, service.StatusError)
+		dppsExpectAccountWrite(mock)
 		require.NoError(t, repo.SetError(context.Background(), 5, "401 unauthorized"))
 		require.Empty(t, sink.types(), "not a transition")
 	})
 	t.Run("clear error on a healthy account", func(t *testing.T) {
-		sink := installRepoEventSink(t)
-		repo, mock := newEntAccountRepoWithMock(t)
-		expectStatusRead(mock, service.StatusActive)
-		expectAccountWrite(mock)
+		sink := dppsInstallRepoEventSink(t)
+		repo, mock := dppsNewEntAccountRepoWithMock(t)
+		dppsExpectStatusRead(mock, service.StatusActive)
+		dppsExpectAccountWrite(mock)
 		require.NoError(t, repo.ClearError(context.Background(), 5))
 		require.Empty(t, sink.types())
 	})
 	t.Run("clear rate limit when nothing was limited", func(t *testing.T) {
-		sink := installRepoEventSink(t)
-		repo, mock := newEntAccountRepoWithMock(t)
-		mock.ExpectExec(`(?s)UPDATE "accounts"`).WillReturnResult(sqlmock.NewResult(0, 0))
+		sink := dppsInstallRepoEventSink(t)
+		repo, mock := dppsNewEntAccountRepoWithMock(t)
+		dppsExpectHeld(mock, false)
+		mock.ExpectExec(`(?s)UPDATE "accounts"`).WillReturnResult(sqlmock.NewResult(0, 1))
 		mock.ExpectExec(`(?s)INSERT INTO scheduler_outbox`).WillReturnResult(sqlmock.NewResult(1, 1))
 		require.NoError(t, repo.ClearRateLimit(context.Background(), 5))
 		require.Empty(t, sink.types())
 	})
 	t.Run("clear temp unschedulable when nothing was set", func(t *testing.T) {
-		sink := installRepoEventSink(t)
-		exec := &recordingSQLExecutor{result: rowsAffectedResult(0)}
-		require.NoError(t, newAccountRepositoryWithSQL(nil, exec, nil).ClearTempUnschedulable(context.Background(), 5))
+		sink := dppsInstallRepoEventSink(t)
+		db, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = db.Close() })
+		mock.ExpectQuery(`(?s)SELECT 1 FROM accounts`).WillReturnRows(sqlmock.NewRows([]string{"?column?"}))
+		mock.ExpectExec(`(?s)UPDATE accounts`).WillReturnResult(sqlmock.NewResult(0, 1))
+		mock.ExpectExec(`INSERT INTO scheduler_outbox`).WillReturnResult(sqlmock.NewResult(1, 1))
+		require.NoError(t, newAccountRepositoryWithSQL(nil, db, nil).ClearTempUnschedulable(context.Background(), 5))
 		require.Empty(t, sink.types())
 	})
 }

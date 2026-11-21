@@ -13,11 +13,13 @@ import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
 import { resolveRouteDocumentTitle } from './title'
+import { dppsRoutes } from './dppsRoutes' // DPPS hook
 
 /**
  * Route definitions with lazy loading
  */
 const routes: RouteRecordRaw[] = [
+  ...dppsRoutes, // DPPS hook
   // ==================== Setup Routes ====================
   {
     path: '/setup',
@@ -558,18 +560,6 @@ const routes: RouteRecordRaw[] = [
       title: 'Plugin Management',
       titleKey: 'admin.plugins.title',
       descriptionKey: 'admin.plugins.description'
-    }
-  },
-  {
-    path: '/admin/events-webhook',
-    name: 'AdminEventsWebhook',
-    component: () => import('@/views/admin/EventsWebhookView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: true,
-      title: 'Events Webhook',
-      titleKey: 'admin.eventsWebhook.title',
-      descriptionKey: 'admin.eventsWebhook.description'
     }
   },
   {

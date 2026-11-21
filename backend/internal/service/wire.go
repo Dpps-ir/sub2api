@@ -568,30 +568,6 @@ func ProvideOpsAlertEvaluatorService(
 	return svc
 }
 
-// ProvideEventsService creates the outgoing events webhook (SC-28), installs it
-// as the process-wide event sink and starts its leader-locked delivery worker.
-// It does nothing until an admin enables it in the settings.
-func ProvideEventsService(
-	settingRepo SettingRepository,
-	outbox EventOutboxRepository,
-	encryptor SecretEncryptor,
-	backup *BackupService,
-	accounts AccountRepository,
-	groups GroupRepository,
-	gateway *GatewayService,
-	users UserRepository,
-	pricing *PricingService,
-	lockCache LeaderLockCache,
-	db *sql.DB,
-	buildInfo BuildInfo,
-) *EventsService {
-	data := NewEventsDataSource(accounts, groups, gateway, users, pricing)
-	svc := NewEventsService(settingRepo, outbox, encryptor, backup.EncryptionKeyConfigured, data, lockCache, db, buildInfo.Version, "")
-	SetEventSink(svc)
-	svc.Start()
-	return svc
-}
-
 // ProvideOpsCleanupService creates and starts OpsCleanupService (cron scheduled).
 // channelMonitorSvc 让维护任务（聚合 + 历史/聚合软删）跟随 ops 清理 cron 一起跑，
 // 共享 leader lock + heartbeat。
@@ -909,7 +885,6 @@ var ProviderSet = wire.NewSet(
 	NewGatewayService,
 	NewOpenAIGatewayService,
 	ProvideImageStorageSettingService,
-	ProvideEventsService,
 	ProvideImageTaskService,
 	ProvideBatchImageModelPricingResolver,
 	NewBatchImagePublicService,

@@ -557,9 +557,7 @@ func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, 
 	}
 
 	balanceDiff := change.New - change.Old
-	if balanceDiff != 0 {
-		EmitBalanceChanged(ctx, userID, change.Old, change.New, operation)
-	}
+	DppsEmitBalanceChangedIfDiff(ctx, userID, change.Old, change.New, operation) // DPPS hook
 	if s.authCacheInvalidator != nil && balanceDiff != 0 {
 		s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
 	}

@@ -3,10 +3,10 @@
     <div class="mx-auto max-w-3xl space-y-6">
       <section class="border-b border-gray-200 pb-5 dark:border-dark-700">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-          {{ t('admin.eventsWebhook.title') }}
+          {{ t('admin.dppsEventsWebhook.title') }}
         </h2>
         <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          {{ t('admin.eventsWebhook.description') }}
+          {{ t('admin.dppsEventsWebhook.description') }}
         </p>
       </section>
 
@@ -18,10 +18,10 @@
         <div class="flex items-center justify-between gap-4">
           <div>
             <div class="text-sm font-medium text-gray-900 dark:text-white">
-              {{ t('admin.eventsWebhook.enabled') }}
+              {{ t('admin.dppsEventsWebhook.enabled') }}
             </div>
             <p class="text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.eventsWebhook.enabledHint') }}
+              {{ t('admin.dppsEventsWebhook.enabledHint') }}
             </p>
           </div>
           <Toggle v-model="form.enabled" data-test="enabled" />
@@ -29,7 +29,7 @@
 
         <div>
           <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
-            {{ t('admin.eventsWebhook.url') }}
+            {{ t('admin.dppsEventsWebhook.url') }}
           </label>
           <input
             v-model="form.url"
@@ -43,14 +43,14 @@
             {{ errors.url }}
           </p>
           <p v-else class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            {{ t('admin.eventsWebhook.urlHint') }}
+            {{ t('admin.dppsEventsWebhook.urlHint') }}
           </p>
         </div>
 
         <div>
           <div class="mb-1 flex items-center gap-2">
             <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">
-              {{ t('admin.eventsWebhook.secret') }}
+              {{ t('admin.dppsEventsWebhook.secret') }}
             </label>
             <span
               class="rounded px-2 py-0.5 text-xs"
@@ -63,8 +63,8 @@
             >
               {{
                 secretConfigured
-                  ? t('admin.eventsWebhook.secretConfigured')
-                  : t('admin.eventsWebhook.secretNotConfigured')
+                  ? t('admin.dppsEventsWebhook.secretConfigured')
+                  : t('admin.dppsEventsWebhook.secretNotConfigured')
               }}
             </span>
           </div>
@@ -77,16 +77,16 @@
               autocomplete="new-password"
               :placeholder="
                 secretConfigured
-                  ? t('admin.eventsWebhook.secretPlaceholderKeep')
-                  : t('admin.eventsWebhook.secretPlaceholderNew')
+                  ? t('admin.dppsEventsWebhook.secretPlaceholderKeep')
+                  : t('admin.dppsEventsWebhook.secretPlaceholderNew')
               "
             />
             <button type="button" class="btn btn-secondary" data-test="generate" @click="generate">
-              {{ t('admin.eventsWebhook.generate') }}
+              {{ t('admin.dppsEventsWebhook.generate') }}
             </button>
           </div>
           <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            {{ t('admin.eventsWebhook.secretHint') }}
+            {{ t('admin.dppsEventsWebhook.secretHint') }}
           </p>
           <div
             v-if="generated"
@@ -94,16 +94,16 @@
             data-test="generated"
           >
             <div class="text-xs font-medium text-amber-800 dark:text-amber-200">
-              {{ t('admin.eventsWebhook.generatedTitle') }}
+              {{ t('admin.dppsEventsWebhook.generatedTitle') }}
             </div>
             <div class="mt-2 flex items-center gap-2">
               <code class="min-w-0 flex-1 break-all text-xs text-gray-900 dark:text-white">{{ generated }}</code>
               <button type="button" class="btn btn-secondary" data-test="copy" @click="copyGenerated">
-                {{ t('admin.eventsWebhook.copy') }}
+                {{ t('admin.dppsEventsWebhook.copy') }}
               </button>
             </div>
             <p class="mt-2 text-xs text-amber-800 dark:text-amber-200">
-              {{ t('admin.eventsWebhook.generatedNote') }}
+              {{ t('admin.dppsEventsWebhook.generatedNote') }}
             </p>
           </div>
         </div>
@@ -111,7 +111,7 @@
         <div>
           <div class="mb-1 flex items-center justify-between">
             <label class="block text-xs font-medium text-gray-600 dark:text-gray-400">
-              {{ t('admin.eventsWebhook.eventTypes') }}
+              {{ t('admin.dppsEventsWebhook.eventTypes') }}
             </label>
             <label class="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300">
               <input
@@ -120,7 +120,7 @@
                 :checked="allTypesChecked"
                 @change="toggleAll(($event.target as HTMLInputElement).checked)"
               />
-              {{ t('admin.eventsWebhook.allTypes') }}
+              {{ t('admin.dppsEventsWebhook.allTypes') }}
             </label>
           </div>
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -134,14 +134,14 @@
             </label>
           </div>
           <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            {{ t('admin.eventsWebhook.eventTypesHint') }}
+            {{ t('admin.dppsEventsWebhook.eventTypesHint') }}
           </p>
         </div>
 
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
-              {{ t('admin.eventsWebhook.snapshotTime') }}
+              {{ t('admin.dppsEventsWebhook.snapshotTime') }}
             </label>
             <input
               v-model="form.snapshot_time_utc"
@@ -155,12 +155,12 @@
               {{ errors.snapshot }}
             </p>
             <p v-else class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.eventsWebhook.snapshotTimeHint') }}
+              {{ t('admin.dppsEventsWebhook.snapshotTimeHint') }}
             </p>
           </div>
           <div>
             <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
-              {{ t('admin.eventsWebhook.balanceThreshold') }}
+              {{ t('admin.dppsEventsWebhook.balanceThreshold') }}
             </label>
             <input
               v-model.number="form.balance_threshold"
@@ -174,27 +174,27 @@
               {{ errors.threshold }}
             </p>
             <p v-else class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.eventsWebhook.balanceThresholdHint') }}
+              {{ t('admin.dppsEventsWebhook.balanceThresholdHint') }}
             </p>
           </div>
         </div>
 
         <div>
           <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">
-            {{ t('admin.eventsWebhook.balanceUserIds') }}
+            {{ t('admin.dppsEventsWebhook.balanceUserIds') }}
           </label>
           <input v-model="userIdsText" data-test="user-ids" type="text" class="input w-full" placeholder="12, 40, 97" />
           <p v-if="errors.userIds" class="mt-1 text-xs text-red-600" data-test="user-ids-error">
             {{ errors.userIds }}
           </p>
           <p v-else class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            {{ t('admin.eventsWebhook.balanceUserIdsHint') }}
+            {{ t('admin.dppsEventsWebhook.balanceUserIdsHint') }}
           </p>
         </div>
 
         <div class="flex justify-end">
           <button type="submit" class="btn btn-primary" data-test="save" :disabled="saving">
-            {{ saving ? t('common.processing') : t('admin.eventsWebhook.save') }}
+            {{ saving ? t('common.processing') : t('admin.dppsEventsWebhook.save') }}
           </button>
         </div>
       </form>
@@ -210,12 +210,12 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
-import { adminAPI } from '@/api/admin'
+import dppsEventsWebhookAPI from '@/api/admin/dppsEventsWebhook'
 import { useAppStore } from '@/stores'
 import { useClipboard } from '@/composables/useClipboard'
 import { isStepUpBlocked, isStepUpCancelled, stepUpBlockReason, useStepUp } from '@/composables/useStepUp'
 import { extractApiErrorMessage } from '@/utils/apiError'
-import { generateSecretHex, isHttpsUrl, isSnapshotTime, parseUserIds } from './eventsWebhookForm'
+import { generateSecretHex, isHttpsUrl, isSnapshotTime, parseUserIds } from './dppsEventsWebhookForm'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -260,7 +260,7 @@ async function copyGenerated() {
 async function load() {
   loading.value = true
   try {
-    const state = await adminAPI.eventsWebhook.get()
+    const state = await dppsEventsWebhookAPI.get()
     const c = state.config
     allEventTypes.value = state.all_event_types ?? []
     secretConfigured.value = state.secret_configured
@@ -272,7 +272,7 @@ async function load() {
     form.balance_threshold = c.balance_threshold ?? 0
     userIdsText.value = (c.balance_user_ids ?? []).join(', ')
   } catch (error) {
-    appStore.showError(extractApiErrorMessage(error, t('admin.eventsWebhook.loadFailed')))
+    appStore.showError(extractApiErrorMessage(error, t('admin.dppsEventsWebhook.loadFailed')))
   } finally {
     loading.value = false
   }
@@ -286,12 +286,12 @@ function validate(): number[] | null {
   const ids = parseUserIds(userIdsText.value)
   // An empty URL is allowed only while the webhook is disabled.
   if (form.url.trim() !== '' || form.enabled) {
-    if (!isHttpsUrl(form.url)) errors.url = t('admin.eventsWebhook.urlInvalid')
+    if (!isHttpsUrl(form.url)) errors.url = t('admin.dppsEventsWebhook.urlInvalid')
   }
-  if (!isSnapshotTime(form.snapshot_time_utc.trim())) errors.snapshot = t('admin.eventsWebhook.snapshotTimeInvalid')
+  if (!isSnapshotTime(form.snapshot_time_utc.trim())) errors.snapshot = t('admin.dppsEventsWebhook.snapshotTimeInvalid')
   const th = Number(form.balance_threshold)
-  if (!Number.isFinite(th) || th < 0) errors.threshold = t('admin.eventsWebhook.balanceThresholdInvalid')
-  if (ids === null) errors.userIds = t('admin.eventsWebhook.balanceUserIdsInvalid')
+  if (!Number.isFinite(th) || th < 0) errors.threshold = t('admin.dppsEventsWebhook.balanceThresholdInvalid')
+  if (ids === null) errors.userIds = t('admin.dppsEventsWebhook.balanceUserIdsInvalid')
   return errors.url || errors.snapshot || errors.threshold || ids === null ? null : ids
 }
 
@@ -309,8 +309,8 @@ async function save() {
     balance_user_ids: ids
   }
   try {
-    await stepUp.run(() => adminAPI.eventsWebhook.update(payload))
-    appStore.showSuccess(t('admin.eventsWebhook.saved'))
+    await stepUp.run(() => dppsEventsWebhookAPI.update(payload))
+    appStore.showSuccess(t('admin.dppsEventsWebhook.saved'))
     // Reload for the new "configured" state; the typed/generated secret is dropped from the form.
     await load()
   } catch (error) {
@@ -323,7 +323,7 @@ async function save() {
       )
       return
     }
-    appStore.showError(extractApiErrorMessage(error, t('admin.eventsWebhook.saveFailed')))
+    appStore.showError(extractApiErrorMessage(error, t('admin.dppsEventsWebhook.saveFailed')))
   } finally {
     saving.value = false
   }

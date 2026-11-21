@@ -1176,7 +1176,7 @@ func (s *OpenAIGatewayService) updateCodexUsageSnapshot(ctx context.Context, acc
 		defer cancel()
 		if err := s.accountRepo.UpdateExtra(updateCtx, accountID, updates); err == nil {
 			notifyOpenAIAutoReset(accountID)
-			EmitSeatUsageFromExtra(updateCtx, accountID, updates)
+			DppsEmitSeatUsageFromExtra(updateCtx, accountID, updates) // DPPS hook
 		}
 	}()
 }

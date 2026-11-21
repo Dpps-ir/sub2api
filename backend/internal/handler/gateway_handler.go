@@ -99,7 +99,7 @@ func NewGatewayHandler(
 		umqHelper = NewUserMsgQueueHelper(userMsgQueueService, SSEPingFormatClaude, pingInterval)
 	}
 
-	h := &GatewayHandler{
+	return &GatewayHandler{
 		gatewayService:            gatewayService,
 		openAIGatewayService:      openAIGatewayService,
 		geminiCompatService:       geminiCompatService,
@@ -118,9 +118,6 @@ func NewGatewayHandler(
 		cfg:                       cfg,
 		settingService:            settingService,
 	}
-	// The events webhook hashes the list /v1/models really serves.
-	service.SetEventsServedModelsLister(h.servedModelIDs)
-	return h
 }
 
 // Messages handles Claude API compatible messages endpoint

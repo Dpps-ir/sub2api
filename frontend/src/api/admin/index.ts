@@ -36,7 +36,6 @@ import riskControlAPI from './riskControl'
 import adminComplianceAPI from './compliance'
 import auditAPI from './audit'
 import pluginsAPI from './plugins'
-import eventsWebhookAPI from './eventsWebhook'
 
 /**
  * Unified admin API object for convenient access
@@ -74,8 +73,7 @@ export const adminAPI = {
   riskControl: riskControlAPI,
   compliance: adminComplianceAPI,
   audit: auditAPI,
-  plugins: pluginsAPI,
-  eventsWebhook: eventsWebhookAPI
+  plugins: pluginsAPI
 }
 
 export {
@@ -111,8 +109,7 @@ export {
   riskControlAPI,
   adminComplianceAPI,
   auditAPI,
-  pluginsAPI,
-  eventsWebhookAPI
+  pluginsAPI
 }
 
 export default adminAPI

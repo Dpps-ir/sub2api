@@ -1,5 +1,6 @@
 export default {
-  eventsWebhook: {
+  dppsEventsWebhook: {
+    nav: 'Events Webhook',
     title: 'Events webhook',
     description: 'Send signed usage, balance and daily snapshot events to an external service such as DPPS.',
     loadFailed: 'Failed to load the events webhook settings',

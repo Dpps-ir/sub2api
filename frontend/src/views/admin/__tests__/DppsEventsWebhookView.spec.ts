@@ -1,13 +1,13 @@
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import EventsWebhookView from '../EventsWebhookView.vue'
+import DppsEventsWebhookView from '../DppsEventsWebhookView.vue'
 import {
   generateSecretHex,
   isHttpsUrl,
   isSnapshotTime,
   parseUserIds
-} from '../eventsWebhookForm'
+} from '../dppsEventsWebhookForm'
 
 enableAutoUnmount(afterEach)
 
@@ -19,8 +19,8 @@ const { getState, update, stepUpRun, showError, showSuccess } = vi.hoisted(() =>
   showSuccess: vi.fn()
 }))
 
-vi.mock('@/api/admin', () => ({
-  adminAPI: { eventsWebhook: { get: getState, update } }
+vi.mock('@/api/admin/dppsEventsWebhook', () => ({
+  default: { get: getState, update }
 }))
 vi.mock('@/stores', () => ({
   useAppStore: () => ({ showError, showSuccess, showInfo: vi.fn() })
@@ -53,7 +53,7 @@ const state = {
 }
 
 async function mountView() {
-  const w = mount(EventsWebhookView, {
+  const w = mount(DppsEventsWebhookView, {
     global: {
       stubs: {
         AppLayout: { template: '<div><slot /></div>' },
@@ -93,7 +93,7 @@ describe('events webhook helpers', () => {
   })
 })
 
-describe('EventsWebhookView', () => {
+describe('DppsEventsWebhookView', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getState.mockResolvedValue(state)
@@ -104,7 +104,7 @@ describe('EventsWebhookView', () => {
     const w = await mountView()
     expect((w.get('[data-test="url"]').element as HTMLInputElement).value).toBe(state.config.url)
     expect((w.get('[data-test="secret"]').element as HTMLInputElement).value).toBe('')
-    expect(w.get('[data-test="secret-badge"]').text()).toBe('admin.eventsWebhook.secretConfigured')
+    expect(w.get('[data-test="secret-badge"]').text()).toBe('admin.dppsEventsWebhook.secretConfigured')
     expect((w.get('[data-test="user-ids"]').element as HTMLInputElement).value).toBe('12, 40')
   })
 

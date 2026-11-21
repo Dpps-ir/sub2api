@@ -12,6 +12,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/dpps" // DPPS hook
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/repository"
@@ -43,6 +44,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 		payment.ProviderSet,
 		middleware.ProviderSet,
 		handler.ProviderSet,
+		dpps.ProviderSet, // DPPS hook
 
 		// Server layer ProviderSet
 		server.ProviderSet,
@@ -87,7 +89,7 @@ func provideCleanup(
 	opsMetricsCollector *service.OpsMetricsCollector,
 	opsAggregation *service.OpsAggregationService,
 	opsAlertEvaluator *service.OpsAlertEvaluatorService,
-	eventsService *service.EventsService,
+	dppsEvents *service.DppsEventsService, // DPPS hook
 	opsCleanup *service.OpsCleanupService,
 	opsScheduledReport *service.OpsScheduledReportService,
 	opsSystemLogSink *service.OpsSystemLogSink,
@@ -225,12 +227,7 @@ func provideCleanup(
 				}
 				return nil
 			}},
-			{"EventsService", func() error {
-				if eventsService != nil {
-					eventsService.Stop()
-				}
-				return nil
-			}},
+			{"DppsEventsService", func() error { dppsEvents.Stop(); return nil }}, // DPPS hook
 			{"OpsAlertEvaluatorService", func() error {
 				if opsAlertEvaluator != nil {
 					opsAlertEvaluator.Stop()

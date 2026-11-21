@@ -1521,21 +1521,8 @@ func (r *accountRepository) BatchUpdateLastUsed(ctx context.Context, updates map
 	return nil
 }
 
-// accountIsInError reads the account's status, only when the events webhook
-// wants seat.status (so nothing extra runs while it is off). seat.status is a
-// transition: a repeated SetError, or a ClearError on a healthy account, is not one.
-// An unreadable status counts as "not in error" for SetError's sake and is
-// resolved the other way round by ClearError never emitting without a read.
-func (r *accountRepository) accountIsInError(ctx context.Context, id int64) bool {
-	if !service.EventWanted(service.EventSeatStatus) || r.client == nil {
-		return false
-	}
-	acc, err := r.client.Account.Query().Where(dbaccount.IDEQ(id)).Select(dbaccount.FieldStatus).Only(ctx)
-	return err == nil && acc != nil && acc.Status == service.StatusError
-}
-
 func (r *accountRepository) SetError(ctx context.Context, id int64, errorMsg string) error {
-	wasError := r.accountIsInError(ctx, id)
+	dppsWasError := r.dppsSeatInError(ctx, id) // DPPS hook
 	_, err := r.client.Account.Update().
 		Where(dbaccount.IDEQ(id)).
 		SetStatus(service.StatusError).
@@ -1549,9 +1536,7 @@ func (r *accountRepository) SetError(ctx context.Context, id int64, errorMsg str
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue set error failed: account=%d err=%v", id, err)
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
-	if !wasError {
-		service.EmitSeatStatus(ctx, id, service.StatusError, service.SeatErrorReasonClass(errorMsg))
-	}
+	service.DppsEmitSeatError(ctx, dppsWasError, id, errorMsg) // DPPS hook
 	return nil
 }
 
@@ -1600,7 +1585,7 @@ func (r *accountRepository) SetGrokCredentialErrorIfMatch(
 		return false, err
 	}
 	r.syncSchedulerAccountSnapshotDetached(ctx, id)
-	service.EmitSeatStatus(ctx, id, service.StatusError, service.SeatErrorReasonClass(errorMsg))
+	service.DppsEmitSeatError(ctx, false, id, errorMsg) // DPPS hook
 	return true, nil
 }
 
@@ -1661,7 +1646,7 @@ func (r *accountRepository) SetGrokOAuthErrorIfCredentialsUnchanged(
 		return false, nil
 	}
 	r.syncSchedulerAccountSnapshotDetached(ctx, id)
-	service.EmitSeatStatus(ctx, id, service.StatusError, service.SeatErrorReasonClass(errorMsg))
+	service.DppsEmitSeatError(ctx, false, id, errorMsg) // DPPS hook
 	return true, nil
 }
 
@@ -1954,7 +1939,7 @@ func (r *accountRepository) ClearError(ctx context.Context, id int64) error {
 	if scoped := r.accountTransactionScope(ctx); scoped != r {
 		return scoped.ClearError(ctx, id)
 	}
-	wasError := r.accountIsInError(ctx, id)
+	dppsWasError := r.dppsSeatInError(ctx, id) // DPPS hook
 	_, err := r.client.Account.Update().
 		Where(dbaccount.IDEQ(id)).
 		SetStatus(service.StatusActive).
@@ -1967,9 +1952,7 @@ func (r *accountRepository) ClearError(ctx context.Context, id int64) error {
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue clear error failed: account=%d err=%v", id, err)
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
-	if wasError {
-		service.EmitSeatStatus(ctx, id, service.StatusActive, "")
-	}
+	service.DppsEmitSeatRecovered(ctx, dppsWasError, id) // DPPS hook
 	return nil
 }
 
@@ -2409,7 +2392,7 @@ func (r *accountRepository) SetRateLimited(ctx context.Context, id int64, resetA
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue rate limit failed: account=%d err=%v", id, err)
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
-	service.EmitSeatLimited(ctx, id, "rate_limit", resetAt, "")
+	service.DppsEmitSeatLimited(ctx, id, "rate_limit", resetAt, "") // DPPS hook
 	return nil
 }
 
@@ -2442,7 +2425,7 @@ func (r *accountRepository) SetRateLimitedIfLater(ctx context.Context, id int64,
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue extended rate limit failed: account=%d err=%v", id, err)
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
-	service.EmitSeatLimited(ctx, id, "rate_limit", resetAt, "")
+	service.DppsEmitSeatLimited(ctx, id, "rate_limit", resetAt, "") // DPPS hook
 	return nil
 }
 
@@ -2527,7 +2510,7 @@ func (r *accountRepository) SetRateLimitedIfUnchanged(
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue rate limit failed: account=%d err=%v", id, err)
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
-	service.EmitSeatLimited(ctx, id, "rate_limit", newResetAt, "")
+	service.DppsEmitSeatLimited(ctx, id, "rate_limit", newResetAt, "") // DPPS hook
 	return true, nil
 }
 
@@ -2596,7 +2579,7 @@ func (r *accountRepository) SetOverloaded(ctx context.Context, id int64, until t
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue overload failed: account=%d err=%v", id, err)
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
-	service.EmitSeatLimited(ctx, id, "overload", until, "")
+	service.DppsEmitSeatLimited(ctx, id, "overload", until, "") // DPPS hook
 	return nil
 }
 
@@ -2624,7 +2607,7 @@ func (r *accountRepository) SetTempUnschedulable(ctx context.Context, id int64, 
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue temp unschedulable failed: account=%d err=%v", id, err)
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
-	service.EmitSeatLimited(ctx, id, "temp_unschedulable", until, "")
+	service.DppsEmitSeatLimited(ctx, id, "temp_unschedulable", until, "") // DPPS hook
 	return nil
 }
 
@@ -2670,7 +2653,7 @@ func (r *accountRepository) SetGrokCredentialTempUnschedulableIfMatch(
 		return false, err
 	}
 	r.syncSchedulerAccountSnapshotDetached(ctx, id)
-	service.EmitSeatLimited(ctx, id, "temp_unschedulable", until, "")
+	service.DppsEmitSeatLimited(ctx, id, "temp_unschedulable", until, "") // DPPS hook
 	return true, nil
 }
 
@@ -2678,34 +2661,23 @@ func (r *accountRepository) ClearTempUnschedulable(ctx context.Context, id int64
 	if scoped := r.accountTransactionScope(ctx); scoped != r {
 		return scoped.ClearTempUnschedulable(ctx, id)
 	}
-	// Only a row that really held a temporary pause counts as cleared: callers
-	// clear defensively (ClearRateLimit chains into it, the admin "clear error"
-	// runs it on every account), and an event per such call would be noise.
-	result, err := r.sql.ExecContext(ctx, `
+	dppsHeld := r.dppsHoldsTempPause(ctx, id) // DPPS hook
+	_, err := r.sql.ExecContext(ctx, `
 		UPDATE accounts
 		SET temp_unschedulable_until = NULL,
 			temp_unschedulable_reason = NULL,
 			updated_at = NOW()
 		WHERE id = $1
 			AND deleted_at IS NULL
-			AND (temp_unschedulable_until IS NOT NULL OR temp_unschedulable_reason IS NOT NULL)
 	`, id)
 	if err != nil {
 		return err
-	}
-	cleared := false
-	if result != nil {
-		if n, rerr := result.RowsAffected(); rerr == nil && n > 0 {
-			cleared = true
-		}
 	}
 	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &id, nil, nil); err != nil {
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue clear temp unschedulable failed: account=%d err=%v", id, err)
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
-	if cleared {
-		service.EmitSeatCleared(ctx, id, "temp_unschedulable")
-	}
+	service.DppsEmitSeatClearedIf(ctx, dppsHeld, id, "temp_unschedulable") // DPPS hook
 	return nil
 }
 
@@ -2713,16 +2685,9 @@ func (r *accountRepository) ClearRateLimit(ctx context.Context, id int64) error 
 	if scoped := r.accountTransactionScope(ctx); scoped != r {
 		return scoped.ClearRateLimit(ctx, id)
 	}
-	// Only a row that held a limit counts as cleared (see ClearTempUnschedulable).
-	affected, err := r.client.Account.Update().
-		Where(
-			dbaccount.IDEQ(id),
-			dbaccount.Or(
-				dbaccount.RateLimitedAtNotNil(),
-				dbaccount.RateLimitResetAtNotNil(),
-				dbaccount.OverloadUntilNotNil(),
-			),
-		).
+	dppsHeld := r.dppsHoldsRateLimit(ctx, id) // DPPS hook
+	_, err := r.client.Account.Update().
+		Where(dbaccount.IDEQ(id)).
 		ClearRateLimitedAt().
 		ClearRateLimitResetAt().
 		ClearOverloadUntil().
@@ -2734,9 +2699,7 @@ func (r *accountRepository) ClearRateLimit(ctx context.Context, id int64) error 
 		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue clear rate limit failed: account=%d err=%v", id, err)
 	}
 	r.syncSchedulerAccountSnapshot(ctx, id)
-	if affected > 0 {
-		service.EmitSeatCleared(ctx, id, "rate_limit")
-	}
+	service.DppsEmitSeatClearedIf(ctx, dppsHeld, id, "rate_limit") // DPPS hook
 	return nil
 }
 
@@ -2895,7 +2858,7 @@ func (r *accountRepository) SetSchedulable(ctx context.Context, id int64, schedu
 	if !schedulable {
 		r.syncSchedulerAccountSnapshot(ctx, id)
 	}
-	service.EmitSeatSchedulable(ctx, id, schedulable, "admin")
+	service.DppsEmitSeatSchedulable(ctx, id, schedulable, "admin") // DPPS hook
 	return nil
 }
 
@@ -2937,9 +2900,7 @@ func (r *accountRepository) AutoPauseExpiredAccounts(ctx context.Context, now ti
 			logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue auto pause account changes failed: err=%v", err)
 		}
 	}
-	for _, accountID := range accountIDs {
-		service.EmitSeatSchedulable(ctx, accountID, false, "expiry")
-	}
+	service.DppsEmitSeatsAutoPaused(ctx, accountIDs) // DPPS hook
 	return int64(len(accountIDs)), nil
 }
 

@@ -59,14 +59,7 @@ func (r *usageBillingRepository) Apply(ctx context.Context, cmd *service.UsageBi
 		return nil, err
 	}
 	tx = nil
-	// After commit: tell the events webhook about a watched balance falling below
-	// its level and about a key running out of quota (both rare, never per request).
-	if result.NewBalance != nil {
-		service.EmitBalanceLowIfCrossed(ctx, cmd.UserID, *result.NewBalance+cmd.BalanceCost, *result.NewBalance)
-	}
-	if result.APIKeyQuotaExhausted {
-		service.EmitKeyChanged(ctx, cmd.UserID, cmd.APIKeyID, "", service.StatusAPIKeyQuotaExhausted, nil)
-	}
+	service.DppsAfterBillingApply(ctx, cmd, result) // DPPS hook
 	return result, nil
 }
 

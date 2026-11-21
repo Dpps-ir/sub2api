@@ -6,24 +6,24 @@ import (
 	"time"
 )
 
-// EventsServedModelsLister returns the model ids GET /v1/models serves a key of
+// DppsEventsServedModelsLister returns the model ids GET /v1/models serves a key of
 // the group. The handler layer registers it (it owns the platform fallbacks and
 // allowlist rules); until then the account-derived list is used.
-type EventsServedModelsLister func(ctx context.Context, group *Group) []string
+type DppsEventsServedModelsLister func(ctx context.Context, group *Group) []string
 
-var eventsServedModelsLister atomic.Pointer[EventsServedModelsLister]
+var dppsEventsServedModelsLister atomic.Pointer[DppsEventsServedModelsLister]
 
-// SetEventsServedModelsLister registers the served-list function.
-func SetEventsServedModelsLister(fn EventsServedModelsLister) {
+// SetDppsEventsServedModelsLister registers the served-list function.
+func SetDppsEventsServedModelsLister(fn DppsEventsServedModelsLister) {
 	if fn == nil {
-		eventsServedModelsLister.Store(nil)
+		dppsEventsServedModelsLister.Store(nil)
 		return
 	}
-	eventsServedModelsLister.Store(&fn)
+	dppsEventsServedModelsLister.Store(&fn)
 }
 
-// eventsDataSource reads the state the events worker reports. It is read-only.
-type eventsDataSource struct {
+// dppsEventsDataSource reads the state the events worker reports. It is read-only.
+type dppsEventsDataSource struct {
 	accounts AccountRepository
 	groups   GroupRepository
 	gateway  *GatewayService
@@ -31,11 +31,11 @@ type eventsDataSource struct {
 	pricing  *PricingService
 }
 
-func NewEventsDataSource(accounts AccountRepository, groups GroupRepository, gateway *GatewayService, users UserRepository, pricing *PricingService) EventsDataSource {
-	return &eventsDataSource{accounts: accounts, groups: groups, gateway: gateway, users: users, pricing: pricing}
+func NewDppsEventsDataSource(accounts AccountRepository, groups GroupRepository, gateway *GatewayService, users UserRepository, pricing *PricingService) DppsEventsDataSource {
+	return &dppsEventsDataSource{accounts: accounts, groups: groups, gateway: gateway, users: users, pricing: pricing}
 }
 
-func (d *eventsDataSource) AccountBrief(ctx context.Context, id int64) (map[string]any, bool) {
+func (d *dppsEventsDataSource) AccountBrief(ctx context.Context, id int64) (map[string]any, bool) {
 	acc, err := d.accounts.GetByID(ctx, id)
 	if err != nil || acc == nil {
 		return nil, false
@@ -43,27 +43,27 @@ func (d *eventsDataSource) AccountBrief(ctx context.Context, id int64) (map[stri
 	return map[string]any{"account_name": acc.Name, "platform": acc.Platform, "priority": acc.Priority}, true
 }
 
-func (d *eventsDataSource) GroupModelLists(ctx context.Context) ([]EventGroupModels, error) {
+func (d *dppsEventsDataSource) GroupModelLists(ctx context.Context) ([]DppsEventGroupModels, error) {
 	groups, err := d.groups.ListActive(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]EventGroupModels, 0, len(groups))
+	out := make([]DppsEventGroupModels, 0, len(groups))
 	for i := range groups {
 		g := groups[i]
 		id := g.ID
 		var models []string
-		if fn := eventsServedModelsLister.Load(); fn != nil {
+		if fn := dppsEventsServedModelsLister.Load(); fn != nil {
 			models = (*fn)(ctx, &g)
 		} else {
 			models = d.gateway.GetAvailableModels(ctx, &id, g.Platform)
 		}
-		out = append(out, EventGroupModels{GroupID: g.ID, Name: g.Name, Models: models})
+		out = append(out, DppsEventGroupModels{GroupID: g.ID, Name: g.Name, Models: models})
 	}
 	return out, nil
 }
 
-func (d *eventsDataSource) SeatSnapshots(ctx context.Context) ([]map[string]any, error) {
+func (d *dppsEventsDataSource) SeatSnapshots(ctx context.Context) ([]map[string]any, error) {
 	accs, err := d.accounts.ListAllWithFilters(ctx, "", "", "", "", 0, "")
 	if err != nil {
 		return nil, err
@@ -85,13 +85,13 @@ func (d *eventsDataSource) SeatSnapshots(ctx context.Context) ([]map[string]any,
 		if a.TempUnschedulableUntil != nil && a.TempUnschedulableUntil.After(now) {
 			seat["temp_unschedulable_until"] = a.TempUnschedulableUntil.UTC().Format(time.RFC3339)
 		}
-		if v, ok := extraFloat(a.Extra, "codex_5h_used_percent"); ok {
+		if v, ok := dppsExtraFloat(a.Extra, "codex_5h_used_percent"); ok {
 			seat["used_percent_5h"] = v
 			if r, ok := a.Extra["codex_5h_reset_at"]; ok {
 				seat["reset_at_5h"] = r
 			}
 		}
-		if v, ok := extraFloat(a.Extra, "codex_7d_used_percent"); ok {
+		if v, ok := dppsExtraFloat(a.Extra, "codex_7d_used_percent"); ok {
 			seat["used_percent_7d"] = v
 			if r, ok := a.Extra["codex_7d_reset_at"]; ok {
 				seat["reset_at_7d"] = r
@@ -102,7 +102,7 @@ func (d *eventsDataSource) SeatSnapshots(ctx context.Context) ([]map[string]any,
 	return out, nil
 }
 
-func (d *eventsDataSource) UserBalance(ctx context.Context, userID int64) (float64, bool) {
+func (d *dppsEventsDataSource) UserBalance(ctx context.Context, userID int64) (float64, bool) {
 	u, err := d.users.GetByID(ctx, userID)
 	if err != nil || u == nil {
 		return 0, false
@@ -110,9 +110,9 @@ func (d *eventsDataSource) UserBalance(ctx context.Context, userID int64) (float
 	return u.Balance, true
 }
 
-func (d *eventsDataSource) PriceTableHash() string {
+func (d *dppsEventsDataSource) PriceTableHash() string {
 	if d.pricing == nil {
 		return ""
 	}
-	return d.pricing.PriceTableHash()
+	return d.pricing.DppsPriceTableHash()
 }

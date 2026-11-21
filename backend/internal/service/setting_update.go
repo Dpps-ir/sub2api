@@ -44,7 +44,7 @@ func (s *SettingService) UpdateSettingsOmitting(ctx context.Context, settings *S
 	}
 	omitted.dropFrom(updates)
 
-	if err := s.setMultipleEmitting(ctx, updates); err != nil {
+	if err := s.dppsSetMultiple(ctx, updates); err != nil { // DPPS hook
 		return err
 	}
 	s.refreshCachedSettingsAfterWrite(ctx, settings, omitted)
@@ -74,7 +74,7 @@ func (s *SettingService) UpdateSettingsWithAuthSourceDefaultsOmitting(ctx contex
 	}
 	omitted.dropFrom(updates)
 
-	if err := s.setMultipleEmitting(ctx, updates); err != nil {
+	if err := s.dppsSetMultiple(ctx, updates); err != nil { // DPPS hook
 		return err
 	}
 	s.refreshCachedSettingsAfterWrite(ctx, settings, omitted)
@@ -855,28 +855,5 @@ func (s *SettingService) validateDefaultSubscriptionGroups(ctx context.Context, 
 		}
 	}
 
-	return nil
-}
-
-// setMultipleEmitting writes the settings and, when the events webhook wants
-// settings.changed, reports the names of the keys whose value differs. Values
-// never leave: settings hold secrets.
-func (s *SettingService) setMultipleEmitting(ctx context.Context, updates map[string]string) error {
-	var old map[string]string
-	if EventWanted(EventSettingsChanged) {
-		keys := make([]string, 0, len(updates))
-		for k := range updates {
-			keys = append(keys, k)
-		}
-		if got, err := s.settingRepo.GetMultiple(ctx, keys); err == nil {
-			old = got
-		}
-	}
-	if err := s.settingRepo.SetMultiple(ctx, updates); err != nil {
-		return err
-	}
-	if old != nil {
-		EmitSettingsChanged(ctx, settingsChangedKeys(old, updates))
-	}
 	return nil
 }
