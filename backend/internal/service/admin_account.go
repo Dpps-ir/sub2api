@@ -546,6 +546,8 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 		}
 	}
 
+	EmitSeatLifecycle(ctx, EventSeatCreated, account.ID, account.Name, account.Platform, &account.Priority, nil)
+
 	AfterAccountCommit(ctx, func(_ context.Context) {
 		// OAuth 账号：创建后异步设置隐私。
 		// 使用 Ensure（幂等）而非 Force：新建账号 Extra 为空时效果相同，但更安全。
@@ -927,6 +929,7 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	if err != nil {
 		return nil, err
 	}
+	EmitSeatLifecycle(ctx, EventSeatUpdated, updated.ID, updated.Name, updated.Platform, &updated.Priority, eventChangedFields(input))
 	return updated, nil
 }
 
@@ -961,6 +964,20 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 // BulkUpdateAccounts updates multiple accounts in one request.
 // It merges credentials/extra keys instead of overwriting the whole object.
 func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUpdateAccountsInput) (*BulkUpdateAccountsResult, error) {
+	fields := eventChangedFields(input)
+	result, err := s.bulkUpdateAccounts(ctx, input)
+	if err == nil && result != nil && EventWanted(EventSeatUpdated) {
+		for i, id := range result.SuccessIDs {
+			if i >= 500 {
+				break
+			}
+			EmitSeatLifecycle(ctx, EventSeatUpdated, id, "", "", nil, fields)
+		}
+	}
+	return result, err
+}
+
+func (s *adminServiceImpl) bulkUpdateAccounts(ctx context.Context, input *BulkUpdateAccountsInput) (*BulkUpdateAccountsResult, error) {
 	// Managed probe/session state may only enter through dedicated typed endpoints.
 	input.Extra = sanitizedCodexFingerprintExtraUpdates(input.Extra)
 	input.Extra = stripOpenAIAutoResetCreditManagedExtra(input.Extra, true)
@@ -1290,6 +1307,13 @@ func (s *adminServiceImpl) resolveBulkUpdateTargetIDs(ctx context.Context, filte
 }
 
 func (s *adminServiceImpl) DeleteAccount(ctx context.Context, id int64) error {
+	// The name has to be read before the row is gone.
+	deletedName, deletedPlatform := "", ""
+	if EventWanted(EventSeatDeleted) {
+		if acc, err := s.accountRepo.GetByID(ctx, id); err == nil && acc != nil {
+			deletedName, deletedPlatform = acc.Name, acc.Platform
+		}
+	}
 	// 级联删除 spark 影子账号（先删影子，再删母账号）
 	shadows, err := s.accountRepo.ListShadowsByParent(ctx, id)
 	if err != nil {
@@ -1303,6 +1327,7 @@ func (s *adminServiceImpl) DeleteAccount(ctx context.Context, id int64) error {
 	if err := s.accountRepo.Delete(ctx, id); err != nil {
 		return err
 	}
+	EmitSeatLifecycle(ctx, EventSeatDeleted, id, deletedName, deletedPlatform, nil, nil)
 	return nil
 }
 

@@ -635,9 +635,11 @@ func (s *PricingService) reloadCustomPricingLayers() error {
 
 	s.mu.Lock()
 	warnDroppedLongContextLadders(s.pricingData, data)
+	oldPricing := s.pricingData
 	s.pricingData = data
 	s.customFilesHash = fingerprint
 	s.mu.Unlock()
+	emitPricesChanged("custom", oldPricing, data, s.PriceTableHash())
 
 	logger.LegacyPrintf("service.pricing", "[Pricing] Custom pricing files changed, reloaded %d models from %s", len(data), pricingFile)
 	return nil
@@ -1149,6 +1151,7 @@ func (s *PricingService) loadPricingData(filePath string) error {
 
 	s.mu.Lock()
 	warnDroppedLongContextLadders(s.pricingData, pricingData)
+	oldPricing := s.pricingData
 	s.pricingData = pricingData
 	s.localHash = hashStr
 	s.customFilesHash = customFilesHash
@@ -1162,7 +1165,22 @@ func (s *PricingService) loadPricingData(filePath string) error {
 	s.mu.Unlock()
 
 	logger.LegacyPrintf("service.pricing", "[Pricing] Loaded %d models from %s", len(pricingData), filePath)
+	source := "remote"
+	if s.cfg != nil && s.cfg.Pricing.FallbackFile != "" && filePath == s.cfg.Pricing.FallbackFile {
+		source = "fallback"
+	}
+	emitPricesChanged(source, oldPricing, pricingData, hashStr)
 	return nil
+}
+
+// PriceTableHash returns the hash of the loaded price table (full hex).
+func (s *PricingService) PriceTableHash() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.localHash + s.customFilesHash
 }
 
 func (s *PricingService) mergeFallbackPricingData(data map[string]*LiteLLMModelPricing) map[string]*LiteLLMModelPricing {

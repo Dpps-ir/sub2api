@@ -291,6 +291,7 @@ func (s *OpsAlertEvaluatorService) evaluateOnce(interval time.Duration) {
 			}
 
 			eventsCreated++
+			EmitAlert(ctx, true, rule.ID, strings.TrimSpace(rule.Name), strings.TrimSpace(rule.Severity), rule.MetricType, float64Ptr(metricValue), float64Ptr(rule.Threshold), firedEvent.Dimensions)
 			if created != nil && created.ID > 0 {
 				if s.maybeSendAlertEmail(ctx, runtimeCfg, rule, created) {
 					emailsSent++
@@ -306,6 +307,7 @@ func (s *OpsAlertEvaluatorService) evaluateOnce(interval time.Duration) {
 				logger.LegacyPrintf("service.ops_alert_evaluator", "[OpsAlertEvaluator] resolve event failed (event=%d): %v", activeEvent.ID, err)
 			} else {
 				eventsResolved++
+				EmitAlert(ctx, false, rule.ID, strings.TrimSpace(rule.Name), strings.TrimSpace(rule.Severity), rule.MetricType, activeEvent.MetricValue, activeEvent.ThresholdValue, activeEvent.Dimensions)
 			}
 		}
 	}
