@@ -31,6 +31,7 @@ types (`seat.status`, ...) are a contract with DPPS's receiver: do not rename th
 
 Backend (`backend/`):
 `internal/service/dpps_events_{service,emit,types,datasource,hooks}.go` and their tests,
+`internal/service/dpps_sticky_escape.go` and `dpps_q75_sticky_probe_test.go`,
 `internal/repository/dpps_event_outbox_repo.go`, `dpps_account_events.go` and tests,
 `internal/handler/dpps_gateway_served_models.go` and test,
 `internal/handler/admin/dpps_events_webhook_handler.go`,
@@ -87,6 +88,8 @@ Backend, other:
 | `internal/service/account_usage_service.go`, `openai_gateway_usage.go` | 1 each | `DppsEmitSeatUsageFromExtra` |
 | `internal/service/ops_alert_evaluator_service.go` | 2 | `DppsEmitAlertFromEvent` (fired, resolved) |
 | `internal/service/pricing_service.go` | 4 | `dppsOldPricing := s.pricingData` and `s.dppsPricesCustomReloaded(...)` in `reloadCustomPricingLayers`; the same pair with `s.dppsPricesLoaded(...)` in `loadPricingData` |
+| `internal/service/openai_account_scheduler.go` | 1 | `s.dppsWaitForStickySlot(...)` in `selectBySessionHash`, right after the first sticky slot attempt (our `dpps_sticky_escape.go`): when the sticky account is full only because its slots are taken (the `concurrency_full` escape), the request first waits for the slot, bounded by `min(gateway.openai_scheduler.dpps_sticky_busy_wait_ms, gateway.scheduling.sticky_session_wait_timeout)` and only while the account's wait queue (`sticky_session_max_waiting`) has room, and returns the acquired slot into upstream's own acquired branch; on no room, timeout or cancel it returns the result unchanged and upstream escapes as before. TTFT and error-rate escapes are untouched. One line. |
+| `internal/config/config.go` | 2 | the field `DppsStickyBusyWaitMs` (`gateway.openai_scheduler.dpps_sticky_busy_wait_ms`, ms) in `GatewayOpenAISchedulerConfig` and its `viper.SetDefault(..., 3000)`. Default 3000: a request whose sticky seat is busy waits at most 3 s for it, then escapes as upstream does. `0` (or a negative value) means no wait, the upstream behaviour. Never above `sticky_session_wait_timeout`. Env: `GATEWAY_OPENAI_SCHEDULER_DPPS_STICKY_BUSY_WAIT_MS`. |
 | `internal/service/setting_update.go` | 2 (changed, not added) | `s.dppsSetMultiple(ctx, updates)` replaces `s.settingRepo.SetMultiple(ctx, updates)` in the two update paths |
 
 Frontend:

@@ -1496,6 +1496,7 @@ type GatewayOpenAISchedulerConfig struct {
 	StickyEscapeTTFTMs int `mapstructure:"sticky_escape_ttft_ms"`
 	// StickyEscapeErrorRate: 错误率 EWMA 超过该阈值时跳过 sticky
 	StickyEscapeErrorRate float64 `mapstructure:"sticky_escape_error_rate"`
+	DppsStickyBusyWaitMs  int     `mapstructure:"dpps_sticky_busy_wait_ms"` // DPPS hook
 }
 
 // GatewayUsageRecordConfig 使用量记录异步队列配置
@@ -2762,6 +2763,7 @@ func setEnvReachableDefaults() {
 	// explicit false in config or env still wins.
 	viper.SetDefault("gateway.openai_scheduler.sticky_escape_enabled", true)
 	viper.SetDefault("gateway.openai_scheduler.sticky_escape_error_rate", 0.0)
+	viper.SetDefault("gateway.openai_scheduler.dpps_sticky_busy_wait_ms", 3000) // DPPS hook
 	viper.SetDefault("gateway.openai_scheduler.sticky_escape_ttft_ms", 0)
 
 	// server.trusted_proxies and security.forwarded_client_ip_headers are the

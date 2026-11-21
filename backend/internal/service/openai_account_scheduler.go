@@ -578,6 +578,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	if acquireErr != nil && req.DisableStickyEscape {
 		return nil, false, acquireErr
 	}
+	result = s.dppsWaitForStickySlot(ctx, req, account, escapeCfg, result, acquireErr) // DPPS hook
 	if acquireErr == nil && result != nil && result.Acquired {
 		if !req.PreserveStickyBinding {
 			_ = s.service.refreshStickySessionTTL(ctx, req.GroupID, sessionHash, s.service.openAIWSSessionStickyTTL())
