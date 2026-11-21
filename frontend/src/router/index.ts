@@ -561,6 +561,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/events-webhook',
+    name: 'AdminEventsWebhook',
+    component: () => import('@/views/admin/EventsWebhookView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Events Webhook',
+      titleKey: 'admin.eventsWebhook.title',
+      descriptionKey: 'admin.eventsWebhook.description'
+    }
+  },
+  {
     path: '/admin/announcements',
     name: 'AdminAnnouncements',
     component: () => import('@/views/admin/AnnouncementsView.vue'),
