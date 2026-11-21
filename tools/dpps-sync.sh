@@ -9,7 +9,7 @@
 #   DPPS_MAIN [main]              the branch that mirrors upstream (never committed to)
 #   DPPS_ORIGIN [origin]          remote of the fork
 #   DPPS_UPSTREAM [upstream]      remote of upstream (used only when gh is missing)
-#   DPPS_FORK_REPO [Sadegh-Kalami/sub2api]   owner/name of the fork, for gh
+#   DPPS_FORK_REPO [Dpps-ir/sub2api]   owner/name of the fork, for gh
 #   DPPS_UPSTREAM_REPO [Wei-Shaw/sub2api]    owner/name of upstream, for gh
 #   DPPS_GH [gh]                  the gh command; set it to a missing command to use the fallback
 #   DPPS_SKIP_CHECKS [unset]      set to 1 to stop after the rebase (no build, test or frontend check)
@@ -19,7 +19,7 @@ BRANCH="${DPPS_BRANCH:-dpps}"
 MAIN="${DPPS_MAIN:-main}"
 ORIGIN="${DPPS_ORIGIN:-origin}"
 UPSTREAM="${DPPS_UPSTREAM:-upstream}"
-FORK_REPO="${DPPS_FORK_REPO:-Sadegh-Kalami/sub2api}"
+FORK_REPO="${DPPS_FORK_REPO:-Dpps-ir/sub2api}"
 UPSTREAM_REPO="${DPPS_UPSTREAM_REPO:-Wei-Shaw/sub2api}"
 GH="${DPPS_GH:-gh}"
 

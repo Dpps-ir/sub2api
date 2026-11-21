@@ -1,6 +1,6 @@
 # DPPS additions to Sub2API
 
-This fork (`Sadegh-Kalami/sub2api`) exists so DPPS can run a Sub2API with one extra
+This fork (`Dpps-ir/sub2api`) exists so DPPS can run a Sub2API with one extra
 feature, the **outgoing events webhook** (SC-28, D-248 to D-251): Sub2API tells one
 configured receiver (DPPS) about every change that matters (seat status and limits,
 usage, group and channel edits, price changes, balance and key events, a daily
@@ -13,7 +13,7 @@ types (`seat.status`, ...) are a contract with DPPS's receiver: do not rename th
 ## The rule
 
 - `main` is an exact copy of upstream `Wei-Shaw/sub2api`. **Never commit to it.**
-  It moves only through `gh repo sync Sadegh-Kalami/sub2api --source Wei-Shaw/sub2api`.
+  It moves only through `gh repo sync Dpps-ir/sub2api --source Wei-Shaw/sub2api`.
 - All DPPS work lives on the branch `dpps` = upstream `main` + our commits, re-based
   after every sync (so `dpps` is force-pushed; use `--force-with-lease`).
 - Our code lives in files that upstream does not have, named with a `dpps_` /
@@ -103,7 +103,7 @@ Run `tools/dpps-sync.sh` from a clone of the fork with `dpps` checked out and a 
 It never pushes. It does:
 
 1. refuses a dirty tree or any branch but `dpps`;
-2. `gh repo sync Sadegh-Kalami/sub2api --source Wei-Shaw/sub2api` (without `gh`: fetches
+2. `gh repo sync Dpps-ir/sub2api --source Wei-Shaw/sub2api` (without `gh`: fetches
    `upstream` and fast-forwards only the local `main`, refusing if `main` has commits of
    its own; the fork on GitHub then stays unsynced);
 3. `git fetch origin`, then `git rebase origin/main` onto `dpps`;
