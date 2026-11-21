@@ -26,7 +26,7 @@ func dppsRoutesOf(t *testing.T) map[string]bool {
 
 func TestDppsAdminRoutes_EventsWebhookUnderDppsPrefixOnceTheServiceExists(t *testing.T) {
 	service.SetDppsEventSink(nil)
-	require.Empty(t, dppsRoutesOf(t), "no events service: nothing registered")
+	require.Len(t, dppsRoutesOf(t), 2, "routes exist even before the service does")
 
 	service.SetDppsEventSink(&service.DppsEventsService{})
 	t.Cleanup(func() { service.SetDppsEventSink(nil) })
@@ -46,4 +46,25 @@ func TestDppsAdminRoutes_WriteNeedsStepUp(t *testing.T) {
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodPut, "/api/v1/admin/dpps/events-webhook", nil))
 	require.Equal(t, http.StatusForbidden, w.Code, "the step-up check runs before the handler")
+}
+
+// The real wire graph builds the router before the events service (wire_gen.go:
+// server.ProvideRouter, then dpps.ProvideEventsService), so the routes must exist
+// when the service is still nil and start working once it is installed.
+func TestDppsAdminRoutes_RegisteredBeforeTheServiceExists(t *testing.T) {
+	service.SetDppsEventSink(nil)
+	t.Cleanup(func() { service.SetDppsEventSink(nil) })
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	registerDppsAdminRoutes(r.Group("/api/v1/admin"), middleware.StepUpAuthMiddleware(func(c *gin.Context) { c.AbortWithStatus(http.StatusForbidden) }))
+
+	for _, m := range []string{http.MethodGet, http.MethodPut} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(m, "/api/v1/admin/dpps/events-webhook", nil))
+		require.NotEqual(t, http.StatusNotFound, w.Code, m+": the route must exist before the service does")
+	}
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/admin/dpps/events-webhook", nil))
+	require.Equal(t, http.StatusServiceUnavailable, w.Code, "no service yet: 503")
+	require.Contains(t, w.Body.String(), "events webhook not available")
 }

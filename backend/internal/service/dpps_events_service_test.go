@@ -264,7 +264,7 @@ func dppsNewEvtHarness(t *testing.T, lock LeaderLockCache, outbox *dppsEvtOutbox
 		w.WriteHeader(h.status(n2))
 	}))
 	t.Cleanup(h.srv.Close)
-	h.svc = NewDppsEventsService(h.repo, h.outbox, dppsEvtEncryptor{}, func() bool { return true }, h.data, lock, nil, "0.2.23", "")
+	h.svc = NewDppsEventsService(h.repo, h.outbox, dppsEvtEncryptor{}, func() bool { return true }, h.data, lock, nil, "0.2.23")
 	h.svc.allowInsecure = true
 	h.svc.httpClient = h.srv.Client()
 	h.svc.now = func() time.Time { return *h.clock }

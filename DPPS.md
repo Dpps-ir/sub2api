@@ -60,7 +60,7 @@ Backend, wiring:
 | `cmd/server/wire.go` | 4 | import of `internal/dpps`; `dpps.ProviderSet` in `wire.Build` (the outbox repository and the events service, which needs `*handler.GatewayHandler` so it can register the served-models lister); a `dppsEvents *service.DppsEventsService` parameter of `provideCleanup`; one cleanup step `dppsEvents.Stop()`. The parameter is also what makes wire build the service. |
 | `cmd/server/wire_gen_test.go` | 1 | passes `&service.DppsEventsService{}` for that parameter |
 | `cmd/server/wire_gen.go` | generated | regenerate, never merge by hand |
-| `internal/server/routes/admin.go` | 1 | `registerDppsAdminRoutes(admin, stepUpAuth)` (our `routes/dpps_admin.go`; registers nothing when there is no events service) |
+| `internal/server/routes/admin.go` | 1 | `registerDppsAdminRoutes(admin, stepUpAuth)` (our `routes/dpps_admin.go`; always registers: the router is built before the events service in the wire graph, so the handler looks the service up per request and answers 503 until it exists) |
 
 Backend, accounts (`internal/repository/account_repo.go`, 18 lines):
 

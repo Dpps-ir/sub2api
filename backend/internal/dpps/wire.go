@@ -40,7 +40,7 @@ func ProvideEventsService(
 ) *service.DppsEventsService {
 	service.SetDppsEventsServedModelsLister(gatewayHandler.DppsServedModelIDs)
 	data := service.NewDppsEventsDataSource(accounts, groups, gateway, users, pricing)
-	svc := service.NewDppsEventsService(settingRepo, outbox, encryptor, backup.EncryptionKeyConfigured, data, lockCache, db, buildInfo.Version, "")
+	svc := service.NewDppsEventsService(settingRepo, outbox, encryptor, backup.EncryptionKeyConfigured, data, lockCache, db, buildInfo.Version)
 	service.SetDppsEventSink(svc)
 	svc.Start()
 	return svc

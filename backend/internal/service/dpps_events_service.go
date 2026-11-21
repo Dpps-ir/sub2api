@@ -132,7 +132,6 @@ type DppsEventsService struct {
 	lockCache   LeaderLockCache
 	db          *sql.DB
 	version     string
-	commit      string
 	instanceID  string
 	leaderTTL   time.Duration // lock lifetime; all work under it must end well inside it
 
@@ -157,10 +156,10 @@ type DppsEventsService struct {
 }
 
 func NewDppsEventsService(settingRepo SettingRepository, outbox DppsEventOutboxRepository, encryptor SecretEncryptor, keyReady func() bool,
-	data DppsEventsDataSource, lockCache LeaderLockCache, db *sql.DB, version, commit string) *DppsEventsService {
+	data DppsEventsDataSource, lockCache LeaderLockCache, db *sql.DB, version string) *DppsEventsService {
 	s := &DppsEventsService{
 		settingRepo: settingRepo, outbox: outbox, encryptor: encryptor, keyReady: keyReady,
-		data: data, lockCache: lockCache, db: db, version: version, commit: commit,
+		data: data, lockCache: lockCache, db: db, version: version,
 		instanceID:  uuid.NewString(),
 		leaderTTL:   dppsEventsLeaderTTL,
 		now:         time.Now,
@@ -654,16 +653,10 @@ func (s *DppsEventsService) checkVersion(ctx context.Context) {
 	}
 	s.startedSent = true
 	data := map[string]any{"version": s.version}
-	if s.commit != "" {
-		data["commit"] = s.commit
-	}
 	s.Emit(ctx, DppsEventSystemStarted, data)
 	st := s.loadState(ctx)
 	if st.LastVersion != "" && st.LastVersion != s.version {
 		d := map[string]any{"version": s.version, "previous_version": st.LastVersion}
-		if s.commit != "" {
-			d["commit"] = s.commit
-		}
 		s.Emit(ctx, DppsEventVersionChanged, d)
 	}
 	if st.LastVersion != s.version {
