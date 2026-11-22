@@ -12,11 +12,38 @@ import (
 	"github.com/google/wire"
 )
 
+// DppsSeatRuntime holds the wired Seat API services installed for lazy route handlers and middlewares.
+type DppsSeatRuntime struct {
+	SeatService      *service.DppsSeatService
+	SeatTokenService *service.DppsSeatTokenService
+}
+
 // ProviderSet is every provider the DPPS additions need.
 var ProviderSet = wire.NewSet(
 	repository.NewDppsEventOutboxRepository,
+	repository.NewDppsSeatRepository,
+	service.NewDppsSeatService,
+	service.NewDppsSeatTokenService,
+	ProvideDppsSeatRuntime,
 	ProvideEventsService,
 )
+
+// ProvideDppsSeatRuntime installs the Seat API services and middleware repositories
+// so routes mounted earlier in the Wire graph resolve them on every request.
+func ProvideDppsSeatRuntime(
+	settingRepo service.SettingRepository,
+	auditRepo service.AuditLogRepository,
+	seatSvc *service.DppsSeatService,
+	seatTokenSvc *service.DppsSeatTokenService,
+) *DppsSeatRuntime {
+	service.SetDppsSeatMiddlewareRepos(settingRepo, auditRepo)
+	service.SetDppsSeatInstance(seatSvc)
+	service.SetDppsSeatTokenInstance(seatTokenSvc)
+	return &DppsSeatRuntime{
+		SeatService:      seatSvc,
+		SeatTokenService: seatTokenSvc,
+	}
+}
 
 // ProvideEventsService creates the outgoing events webhook (SC-28), installs it
 // as the process-wide event sink and starts its leader-locked delivery worker.
@@ -37,7 +64,9 @@ func ProvideEventsService(
 	db *sql.DB,
 	buildInfo service.BuildInfo,
 	gatewayHandler *handler.GatewayHandler,
+	seatRuntime *DppsSeatRuntime,
 ) *service.DppsEventsService {
+	_ = seatRuntime
 	service.SetDppsEventsServedModelsLister(gatewayHandler.DppsServedModelIDs)
 	data := service.NewDppsEventsDataSource(accounts, groups, gateway, users, pricing)
 	svc := service.NewDppsEventsService(settingRepo, outbox, encryptor, backup.EncryptionKeyConfigured, data, lockCache, db, buildInfo.Version)

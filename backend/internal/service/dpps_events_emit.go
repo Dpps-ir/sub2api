@@ -290,7 +290,7 @@ func DppsEmitSettingsChanged(ctx context.Context, keys []string) {
 func dppsSettingsChangedKeys(old, updates map[string]string) []string {
 	var out []string
 	for k, v := range updates {
-		if strings.HasPrefix(k, "dpps_events_webhook_") {
+		if strings.HasPrefix(k, "dpps_events_webhook_") || strings.HasPrefix(k, "dpps_seat_api_") {
 			continue
 		}
 		if ov, ok := old[k]; !ok || ov != v {

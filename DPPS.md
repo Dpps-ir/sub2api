@@ -1,14 +1,25 @@
 # DPPS additions to Sub2API
 
-This fork (`Dpps-ir/sub2api`) exists so DPPS can run a Sub2API with one extra
-feature, the **outgoing events webhook** (SC-28, D-248 to D-251): Sub2API tells one
-configured receiver (DPPS) about every change that matters (seat status and limits,
-usage, group and channel edits, price changes, balance and key events, a daily
-snapshot), signed with HMAC-SHA256 and retried from a database outbox
-(`dpps_event_outbox`). It is off until an admin enables it on the admin page
-"Events webhook" (`/admin/dpps/events-webhook`, API `/api/v1/admin/dpps/events-webhook`).
-The JSON envelope, the `X-Event-Id` and `X-Event-Signature` headers and the event
-types (`seat.status`, ...) are a contract with DPPS's receiver: do not rename them.
+This fork (`Dpps-ir/sub2api`) exists so DPPS can run a Sub2API with two DPPS
+additions:
+
+1. The **outgoing events webhook** (SC-28, D-248 to D-251): Sub2API tells one
+   configured receiver (DPPS) about every change that matters (seat status and limits,
+   usage, group and channel edits, price changes, balance and key events, a daily
+   snapshot), signed with HMAC-SHA256 and retried from a database outbox
+   (`dpps_event_outbox`). It is off until an admin enables it on the admin page
+   "Events webhook" (`/admin/dpps/events-webhook`, API `/api/v1/admin/dpps/events-webhook`).
+   The JSON envelope, the `X-Event-Id` and `X-Event-Signature` headers and the event
+   types (`seat.status`, ...) are a contract with DPPS's receiver: do not rename them.
+2. The **Seat API** (D-286): an isolated service-to-service API under `/api/v1/dpps/*`
+   (`GET /seats`, `GET /seats/:id`, `PUT /seats/:id/groups`, `POST /groups`,
+   `DELETE /groups/:id`, `PUT /keys/:id/group`, `GET /usage`) guarded by its own
+   `X-DPPS-Seat-Token` (`dpps_seat_<64hex>`), constant-time SHA-256 verification
+   against `settings` (`dpps_seat_api_token_hash`, `dpps_seat_api_token_meta`,
+   excluded from `GetAllSettings`, `UpdateSettings`, and `dppsSettingsChangedKeys`),
+   pre/post-auth rate limiting (including loopback), and synchronous `audit_logs`
+   recording per mutating request. Token lifecycle (`/api/v1/admin/dpps/seat-token`)
+   requires human admin JWT and step-up 2FA for writes.
 
 ## The rule
 
@@ -19,8 +30,8 @@ types (`seat.status`, ...) are a contract with DPPS's receiver: do not rename th
 - Our code lives in files that upstream does not have, named with a `dpps_` /
   `Dpps` prefix (and the new package `backend/internal/dpps`). Every Go identifier we
   add at package level carries `Dpps`/`dpps`, the table is `dpps_event_outbox`, the
-  settings keys are `dpps_events_webhook_*`, the lock is `dpps:events:webhook:sender:leader`,
-  so a name upstream adds later cannot collide with ours.
+  settings keys are `dpps_events_webhook_*` and `dpps_seat_api_token_*`, the lock is
+  `dpps:events:webhook:sender:leader`, so a name upstream adds later cannot collide with ours.
 - Inside an upstream file the only change allowed is a **hook**: ideally one line that
   calls a function in a `dpps_` file, marked with a trailing `// DPPS hook`. Put new
   logic in our files, never in the hook. A hook that has to be two lines (read before,
@@ -31,12 +42,15 @@ types (`seat.status`, ...) are a contract with DPPS's receiver: do not rename th
 
 Backend (`backend/`):
 `internal/service/dpps_events_{service,emit,types,datasource,hooks}.go` and their tests,
+`internal/service/dpps_seat_{service,token_service}.go` and `dpps_seat_service_test.go`,
 `internal/service/dpps_sticky_escape.go` and `dpps_q75_sticky_probe_test.go`,
 `internal/service/dpps_test_hooks.go` and `dpps_test_hooks_test.go`,
-`internal/repository/dpps_event_outbox_repo.go`, `dpps_account_events.go` and tests,
-`internal/handler/dpps_gateway_served_models.go` and test,
-`internal/handler/admin/dpps_events_webhook_handler.go`,
-`internal/server/routes/dpps_admin.go` and test, `internal/dpps/wire.go`,
+`internal/repository/dpps_event_outbox_repo.go`, `dpps_account_events.go`, `dpps_seat_repo.go` and tests,
+`internal/handler/dpps_gateway_served_models.go`, `dpps_seat_{handler,dto}.go` and test,
+`internal/handler/admin/dpps_{events_webhook,seat_token}_handler.go`,
+`internal/server/middleware/dpps_seat_{auth,ratelimit,audit}.go`,
+`internal/server/routes/dpps_admin.go`, `dpps_seats.go`, `dpps_admin_test.go`, `dpps_seat_api_test.go`,
+`internal/dpps/wire.go`,
 `migrations/253_dpps_event_outbox.sql`.
 
 Frontend (`frontend/src/`):
@@ -59,10 +73,11 @@ Backend, wiring:
 
 | file | lines | what it calls |
 |---|---|---|
-| `cmd/server/wire.go` | 4 | import of `internal/dpps`; `dpps.ProviderSet` in `wire.Build` (the outbox repository and the events service, which needs `*handler.GatewayHandler` so it can register the served-models lister); a `dppsEvents *service.DppsEventsService` parameter of `provideCleanup`; one cleanup step `dppsEvents.Stop()`. The parameter is also what makes wire build the service. |
+| `cmd/server/wire.go` | 4 | import of `internal/dpps`; `dpps.ProviderSet` in `wire.Build` (the outbox repository, events service, and `ProvideDppsSeatRuntime` for the Seat API services and middleware repositories); a `dppsEvents *service.DppsEventsService` parameter of `provideCleanup`; one cleanup step `dppsEvents.Stop()`. The parameter is also what makes wire build the DPPS services. |
 | `cmd/server/wire_gen_test.go` | 1 | passes `&service.DppsEventsService{}` for that parameter |
 | `cmd/server/wire_gen.go` | generated | regenerate, never merge by hand |
-| `internal/server/routes/admin.go` | 1 | `registerDppsAdminRoutes(admin, stepUpAuth)` (our `routes/dpps_admin.go`; always registers: the router is built before the events service in the wire graph, so the handler looks the service up per request and answers 503 until it exists) |
+| `internal/server/router.go` | 1 | `routes.RegisterDppsSeatRoutes(v1, redisClient)` (mounts `/api/v1/dpps/*` directly on `v1`, isolated from `AdminAuth`, `JWTAuth`, `APIKeyAuth`, `PanelRateLimiter`, and `AdminComplianceGuard`) |
+| `internal/server/routes/admin.go` | 1 | `registerDppsAdminRoutes(admin, stepUpAuth)` (our `routes/dpps_admin.go`, registering `/dpps/events-webhook` and `/dpps/seat-token`; always registers: the router is built before DPPS services in the wire graph, so handlers resolve services per request and answer 503 until initialized) |
 
 Backend, accounts (`internal/repository/account_repo.go`, 18 lines):
 
