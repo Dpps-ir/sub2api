@@ -32,6 +32,7 @@ types (`seat.status`, ...) are a contract with DPPS's receiver: do not rename th
 Backend (`backend/`):
 `internal/service/dpps_events_{service,emit,types,datasource,hooks}.go` and their tests,
 `internal/service/dpps_sticky_escape.go` and `dpps_q75_sticky_probe_test.go`,
+`internal/service/dpps_test_hooks.go` and `dpps_test_hooks_test.go`,
 `internal/repository/dpps_event_outbox_repo.go`, `dpps_account_events.go` and tests,
 `internal/handler/dpps_gateway_served_models.go` and test,
 `internal/handler/admin/dpps_events_webhook_handler.go`,
@@ -85,13 +86,19 @@ Backend, other:
 | `internal/service/channel_service.go` | 4 | `dppsAfterChannelCreate`, `dppsAfterChannelUpdate`; `Delete`: `dppsBeforeChannelDelete` and `dppsDone()` |
 | `internal/service/admin_user.go` | 1 | `DppsEmitBalanceChangedIfDiff` |
 | `internal/service/api_key_service.go` | 1 | `DppsEmitKeyUpdated` |
-| `internal/service/account_usage_service.go`, `openai_gateway_usage.go` | 1 each | `DppsEmitSeatUsageFromExtra` |
+| `internal/service/openai_gateway_usage.go` | 1 | `DppsEmitSeatUsageFromExtra` |
 | `internal/service/ops_alert_evaluator_service.go` | 2 | `DppsEmitAlertFromEvent` (fired, resolved) |
 | `internal/service/pricing_service.go` | 4 | `dppsOldPricing := s.pricingData` and `s.dppsPricesCustomReloaded(...)` in `reloadCustomPricingLayers`; the same pair with `s.dppsPricesLoaded(...)` in `loadPricingData` |
 | `internal/service/openai_account_scheduler.go` | 1 | `s.dppsWaitForStickySlot(...)` in `selectBySessionHash`, right after the first sticky slot attempt (our `dpps_sticky_escape.go`): when the sticky account is full only because its slots are taken (the `concurrency_full` escape), the request first waits for the slot, bounded by `min(gateway.openai_scheduler.dpps_sticky_busy_wait_ms, gateway.scheduling.sticky_session_wait_timeout)` and only while the account's wait queue (`sticky_session_max_waiting`) has room, and returns the acquired slot into upstream's own acquired branch; on no room, timeout or cancel it returns the result unchanged and upstream escapes as before. TTFT and error-rate escapes are untouched. One line. |
 | `internal/config/config.go` | 2 | the field `DppsStickyBusyWaitMs` (`gateway.openai_scheduler.dpps_sticky_busy_wait_ms`, ms) in `GatewayOpenAISchedulerConfig` and its `viper.SetDefault(..., 3000)`. Default 3000: a request whose sticky seat is busy waits at most 3 s for it, then escapes as upstream does. `0` (or a negative value) means no wait, the upstream behaviour. Never above `sticky_session_wait_timeout`. Env: `GATEWAY_OPENAI_SCHEDULER_DPPS_STICKY_BUSY_WAIT_MS`. |
 | `internal/service/setting_update.go` | 2 (changed, not added) | `s.dppsSetMultiple(ctx, updates)` replaces `s.settingRepo.SetMultiple(ctx, updates)` in the two update paths |
-| `internal/service/openai_gateway_forward.go` | 1 | `dppsPromoteDeveloperPrompt(decoded, s.cfg, isCodexCLI)`, placed in the non-bridge OAuth branch just before `applyCodexOAuthTransformWithOptions`: it must run before `extractSystemMessagesFromInput`/`applyInstructions` (which live inside the transform and have no config access), and only there because the Chat-compat bridge sets `SkipDefaultInstructions` |
+| `internal/service/openai_gateway_forward.go` | 4 | `dppsPromoteDeveloperPrompt(decoded, s.cfg, isCodexCLI)` (1 line in the non-bridge OAuth branch just before `applyCodexOAuthTransformWithOptions`: it must run before `extractSystemMessagesFromInput`/`applyInstructions` which live inside the transform and have no config access, and only there because the Chat-compat bridge sets `SkipDefaultInstructions`); plus 3 test-hook lines in `buildUpstreamRequest`: `dppsResolveChatGPTURL` (OAuth, SetupToken OAuth-like) and `dppsApplyChatGPTHost` |
+| `internal/service/openai_gateway_passthrough.go` | 3 | `dppsResolveChatGPTURL` (OAuth, SetupToken OAuth-like) and `dppsApplyChatGPTHost` in `buildUpstreamRequestOpenAIPassthrough` |
+| `internal/service/openai_ws_forwarder_payload.go` | 2 | `dppsResolveChatGPTURL` (OAuth, SetupToken OAuth-like) in `buildOpenAIResponsesWSURL` |
+| `internal/service/account_usage_service.go` | 3 | `DppsEmitSeatUsageFromExtra` (1 line); `dppsResolveChatGPTURL` and `dppsApplyChatGPTHost` in `probeOpenAICodexSnapshot` (2 lines) |
+| `internal/service/account_test_service.go` | 6 | `dppsResolveChatGPTURL` and `dppsApplyChatGPTHost` in `testOpenAIAccountConnection`, `testOpenAICompactConnection`, and `testOpenAIImageOAuth` |
+| `internal/service/openai_quota_service.go` | 3 | `dppsResolveChatGPTURL` on `chatGPTUsageURL`, `chatGPTRateLimitCreditsURL`, and `chatGPTRateLimitResetURL` |
+| `internal/service/openai_codex_models_service.go` | 1 | `dppsResolveChatGPTURL(chatgptCodexModelsURL)` in `FetchCodexModelsManifest` |
 | `internal/config/config.go` | 2 | the field `Gateway.DppsDeveloperPromptAsInstructions` and its `viper.SetDefault(..., false)` |
 
 Settings (config, not the admin page): `gateway.dpps_developer_prompt_as_instructions` (bool,
@@ -102,6 +109,10 @@ from the Codex CLI (`IsCodexOfficialClientByHeaders` or `force_codex_cli`) and c
 `internal/service/dpps_developer_prompt{,_test}.go`. Default on because it was proven live (2026-11, GPT-6 Luna through
 production, 5+5 requests with an ask_user_question tool and an ambiguous request: client prompt as
 `developer` with the persona injected called ask_user_question 0 of 5 times, as `system` 5 of 5).
+
+Test-only env hooks (never set in production; exact no-ops when unset):
+- `SUB2API_TEST_CHATGPT_BASE_URL`: accepts only `http`/`https` with no userinfo/query/fragment and strict loopback host (`localhost` or `net.ParseIP(host).IsLoopback()`); rewrites the hardcoded ChatGPT upstream endpoints and `req.Host` in `internal/service/dpps_test_hooks.go`.
+- `SUB2API_TEST_DPPS_ALLOW_LOOPBACK_WEBHOOK=true`: inside `internal/service/dpps_events_service.go`, allows `http`/`https` webhook URLs only when the host is strictly loopback and switches `DppsEventsService`'s dialer from `safeDialContext` to a loopback-only `DialContext`. Non-loopback HTTP and private LAN IPs remain rejected.
 
 Frontend:
 

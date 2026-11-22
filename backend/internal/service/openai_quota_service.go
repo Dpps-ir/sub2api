@@ -189,7 +189,7 @@ func (s *OpenAIQuotaService) QueryUsage(ctx context.Context, accountID int64) (*
 			SetContext(callCtx).
 			SetHeaders(quotaHeaders).
 			SetSuccessResult(&payload).
-			Get(chatGPTUsageURL)
+			Get(dppsResolveChatGPTURL(chatGPTUsageURL)) // DPPS hook
 		if err != nil {
 			return nil, infraerrors.Newf(http.StatusBadGateway, "OPENAI_QUOTA_REQUEST_FAILED", "upstream request failed: %v", err)
 		}
@@ -322,7 +322,7 @@ func (s *OpenAIQuotaService) queryResetCreditDetails(ctx context.Context, client
 	resp, err := client.R().
 		SetContext(ctx).
 		SetHeaders(quotaHeaders).
-		Get(chatGPTRateLimitCreditsURL)
+		Get(dppsResolveChatGPTURL(chatGPTRateLimitCreditsURL)) // DPPS hook
 	if err != nil {
 		slog.Warn("openai_quota_reset_credit_details_failed", "account_id", accountID, "error", err)
 		return nil
@@ -420,7 +420,7 @@ func (s *OpenAIQuotaService) resetCredit(ctx context.Context, accountID int64, c
 			SetHeaders(headers).
 			SetBody(body).
 			SetSuccessResult(&payload).
-			Post(chatGPTRateLimitResetURL)
+			Post(dppsResolveChatGPTURL(chatGPTRateLimitResetURL)) // DPPS hook
 		if err != nil {
 			return nil, infraerrors.Newf(http.StatusBadGateway, "OPENAI_QUOTA_RESET_REQUEST_FAILED", "upstream request failed: %v", err)
 		}

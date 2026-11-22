@@ -552,10 +552,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	targetURL := openaiPlatformAPIURL
 	switch account.Type {
 	case AccountTypeOAuth:
-		targetURL = chatgptCodexURL
+		targetURL = dppsResolveChatGPTURL(chatgptCodexURL) // DPPS hook
 	case AccountTypeSetupToken:
 		if account.IsOpenAIOAuthLike() {
-			targetURL = chatgptCodexURL
+			targetURL = dppsResolveChatGPTURL(chatgptCodexURL) // DPPS hook
 		}
 	case AccountTypeAPIKey:
 		baseURL := account.GetOpenAIBaseURL()
@@ -620,7 +620,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		// only that token while preserving any independent beta negotiation.
 		stripOpenAILegacyResponsesBeta(req.Header)
 		promptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
-		req.Host = "chatgpt.com"
+		dppsApplyChatGPTHost(req) // DPPS hook
 		if err := resolveAndSetOpenAIChatGPTAccountHeaders(ctx, s.accountRepo, req.Header, account); err != nil {
 			return nil, fmt.Errorf("resolve chatgpt account headers: %w", err)
 		}

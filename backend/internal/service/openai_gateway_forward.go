@@ -1403,10 +1403,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	switch account.Type {
 	case AccountTypeOAuth:
 		// OAuth accounts use ChatGPT internal API
-		targetURL = chatgptCodexURL
+		targetURL = dppsResolveChatGPTURL(chatgptCodexURL) // DPPS hook
 	case AccountTypeSetupToken:
 		if account.IsOpenAIOAuthLike() {
-			targetURL = chatgptCodexURL
+			targetURL = dppsResolveChatGPTURL(chatgptCodexURL) // DPPS hook
 		} else {
 			targetURL = openaiPlatformAPIURL
 		}
@@ -1455,7 +1455,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// Set headers specific to OAuth accounts (ChatGPT internal API)
 	if account.UsesOpenAICodexProtocol() {
 		// Required: set Host for ChatGPT API (must use req.Host, not Header.Set)
-		req.Host = "chatgpt.com"
+		dppsApplyChatGPTHost(req) // DPPS hook
 		if err := resolveAndSetOpenAIChatGPTAccountHeaders(ctx, s.accountRepo, req.Header, account); err != nil {
 			return nil, fmt.Errorf("resolve chatgpt account headers: %w", err)
 		}

@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -168,7 +169,7 @@ func NewDppsEventsService(settingRepo SettingRepository, outbox DppsEventOutboxR
 	}
 	s.httpClient = &http.Client{
 		Timeout:   dppsEventsSendTimeout,
-		Transport: &http.Transport{DialContext: safeDialContext, TLSHandshakeTimeout: 5 * time.Second, DisableKeepAlives: true},
+		Transport: &http.Transport{DialContext: dppsEventsWebhookDialContext, TLSHandshakeTimeout: 5 * time.Second, DisableKeepAlives: true},
 		// A receiver must answer directly: a redirect could point somewhere unvetted.
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
@@ -223,9 +224,66 @@ func DppsVerifyEventSignature(secret, header string, body []byte, now time.Time,
 
 // ---- configuration ---------------------------------------------------------
 
+func dppsAllowLoopbackWebhook() bool {
+	return os.Getenv(dppsTestAllowLoopbackWebhookEnv) == "true"
+}
+
+func dppsEventsWebhookDialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	if dppsAllowLoopbackWebhook() {
+		return dppsLoopbackOnlyDialContext(ctx, network, address)
+	}
+	return safeDialContext(ctx, network, address)
+}
+
+func dppsLoopbackOnlyDialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if !ip.IsLoopback() {
+			return nil, &net.AddrError{Err: "blocked by loopback-only test policy", Addr: address}
+		}
+		return monitorDialer.DialContext(ctx, network, address)
+	}
+	if !strings.EqualFold(host, "localhost") {
+		return nil, &net.AddrError{Err: "blocked by loopback-only test policy", Addr: address}
+	}
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	if len(addrs) == 0 {
+		return nil, &net.AddrError{Err: "no addresses for host", Addr: host}
+	}
+	var lastErr error
+	for _, a := range addrs {
+		if !a.IP.IsLoopback() {
+			lastErr = &net.AddrError{Err: "blocked by loopback-only test policy", Addr: a.IP.String()}
+			continue
+		}
+		conn, err := monitorDialer.DialContext(ctx, network, net.JoinHostPort(a.IP.String(), port))
+		if err == nil {
+			return conn, nil
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = &net.AddrError{Err: "no loopback addresses", Addr: host}
+	}
+	return nil, lastErr
+}
+
 func dppsValidateEventsWebhookURL(raw string) error {
-	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" {
+	trimmed := strings.TrimSpace(raw)
+	u, err := url.Parse(trimmed)
+	if err != nil || u.Host == "" || u.User != nil || u.Fragment != "" || strings.Contains(trimmed, "#") || strings.HasSuffix(u.Host, ":") {
+		return ErrDppsEventsWebhookURLInvalid
+	}
+	if dppsAllowLoopbackWebhook() && (u.Scheme == "http" || u.Scheme == "https") && dppsIsLoopbackHostname(u.Hostname()) {
+		return nil
+	}
+	if u.Scheme != "https" {
 		return ErrDppsEventsWebhookURLInvalid
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), monitorEndpointResolveTimeout)

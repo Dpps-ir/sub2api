@@ -33,10 +33,10 @@ func (s *OpenAIGatewayService) buildOpenAIResponsesWSURL(account *Account) (stri
 	var targetURL string
 	switch account.Type {
 	case AccountTypeOAuth:
-		targetURL = chatgptCodexURL
+		targetURL = dppsResolveChatGPTURL(chatgptCodexURL) // DPPS hook
 	case AccountTypeSetupToken:
 		if account.IsOpenAIOAuthLike() {
-			targetURL = chatgptCodexURL
+			targetURL = dppsResolveChatGPTURL(chatgptCodexURL) // DPPS hook
 		} else {
 			targetURL = openaiPlatformAPIURL
 		}

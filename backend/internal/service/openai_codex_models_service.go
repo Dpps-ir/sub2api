@@ -1745,7 +1745,7 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 		clientVersion = CodexCanonicalClientVersion()
 	}
 
-	requestEndpoint := chatgptCodexModelsURL
+	requestEndpoint := dppsResolveChatGPTURL(chatgptCodexModelsURL) // DPPS hook
 	authToken := ""
 	useAPIKeyUpstream := false
 	appendModelsPath := false
