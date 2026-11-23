@@ -339,7 +339,14 @@ func (r *dppsSeatRepository) SetAccountDppsGroups(
 		return nil, rowErr
 	}
 
-	// Preserve non-dpps-* memberships and replace dpps-* subset deterministically.
+	// A seat placed in a holder's dpps-plan-* group is dedicated to that holder or shared only with one other half-seat
+	// holder (D-269, D-270): it leaves every non-dpps-* group, or keys bound to those groups (for example the wallet keys
+	// still on openai-default before the cutover) would keep being scheduled on it. A pool-only seat keeps them.
+	if dppsGroupNamesIncludePlan(groupNames) {
+		nonDppsGroups = nonDppsGroups[:0]
+	}
+
+	// Preserve non-dpps-* memberships (pool-only seats) and replace dpps-* subset deterministically.
 	finalGroups := make([]service.Group, 0, len(nonDppsGroups)+len(targetGroups))
 	finalGroupIDs := make([]int64, 0, len(nonDppsGroups)+len(targetGroups))
 	seenIDs := make(map[int64]struct{}, len(nonDppsGroups)+len(targetGroups))
@@ -624,4 +631,14 @@ func dppsLockAndLoadGroupsByName(ctx context.Context, exec sqlExecutor, names []
 		return nil, err
 	}
 	return out, nil
+}
+
+// dppsGroupNamesIncludePlan reports whether the requested dpps-* groups name a holder's plan group.
+func dppsGroupNamesIncludePlan(names []string) bool {
+	for _, n := range names {
+		if strings.HasPrefix(n, "dpps-plan-") {
+			return true
+		}
+	}
+	return false
 }
