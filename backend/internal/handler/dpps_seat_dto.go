@@ -60,6 +60,41 @@ type DppsSeatDTO struct {
 	CreatedAt             time.Time             `json:"created_at"`
 	LastErrorClass        string                `json:"last_error_class"`
 	SubscriptionExpiresAt *time.Time            `json:"subscription_expires_at,omitempty"`
+	PausedUntil           *time.Time            `json:"paused_until"`
+	SchedulingThreshold   *int                  `json:"scheduling_threshold"`
+}
+
+// DppsSetSeatThresholdRequest is the strict JSON payload for PUT /api/v1/dpps/seats/:id/scheduling-threshold.
+// Threshold keeps the raw JSON so a missing key, null and a number can be told apart.
+type DppsSetSeatThresholdRequest struct {
+	Threshold json.RawMessage `json:"threshold"`
+}
+
+// DppsSetSeatThresholdResponseDTO is the response data for PUT /api/v1/dpps/seats/:id/scheduling-threshold.
+type DppsSetSeatThresholdResponseDTO struct {
+	ID                  int64 `json:"id"`
+	SchedulingThreshold *int  `json:"scheduling_threshold"`
+}
+
+// dppsParseThreshold: nil raw (key missing) is invalid; "null" clears; otherwise a plain integer 1..100.
+func dppsParseThreshold(raw json.RawMessage) (*int, bool) {
+	text := string(bytes.TrimSpace(raw))
+	if text == "" {
+		return nil, false
+	}
+	if text == "null" {
+		return nil, true
+	}
+	for i := 0; i < len(text); i++ {
+		if text[i] < '0' || text[i] > '9' {
+			return nil, false
+		}
+	}
+	v, err := strconv.Atoi(text)
+	if err != nil || v < 1 || v > 100 {
+		return nil, false
+	}
+	return &v, true
 }
 
 // DppsSeatListResponseDTO is the response data for GET /api/v1/dpps/seats.
@@ -256,6 +291,8 @@ func dppsSeatFromService(s service.DppsSeat) DppsSeatDTO {
 		CreatedAt:             s.CreatedAt.UTC(),
 		LastErrorClass:        s.LastErrorClass,
 		SubscriptionExpiresAt: dppsNormalizeUTCTimePtr(s.SubscriptionExpiresAt),
+		PausedUntil:           dppsNormalizeUTCTimePtr(s.PausedUntil),
+		SchedulingThreshold:   s.SchedulingThreshold,
 	}
 }
 

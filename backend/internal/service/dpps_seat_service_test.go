@@ -17,12 +17,13 @@ import (
 )
 
 type dppsSeatTestRepo struct {
-	listFn       func(ctx context.Context) ([]Account, error)
-	getSeatFn    func(ctx context.Context, accountID int64) (*Account, error)
-	getGroupFn   func(ctx context.Context, name string) (*Group, error)
-	setGroupsFn  func(ctx context.Context, accountID int64, groupNames []string, validateGroup func(*Group) error) (*DppsSetSeatGroupsResult, error)
-	getUsageFn   func(ctx context.Context, accountID int64, since, until time.Time) ([]DppsUsageItem, error)
-	setCallCount int
+	listFn         func(ctx context.Context) ([]Account, error)
+	getSeatFn      func(ctx context.Context, accountID int64) (*Account, error)
+	getGroupFn     func(ctx context.Context, name string) (*Group, error)
+	setGroupsFn    func(ctx context.Context, accountID int64, groupNames []string, validateGroup func(*Group) error) (*DppsSetSeatGroupsResult, error)
+	getUsageFn     func(ctx context.Context, accountID int64, since, until time.Time) ([]DppsUsageItem, error)
+	setCallCount   int
+	thresholdCalls []dppsThresholdCall
 }
 
 func (r *dppsSeatTestRepo) ListOpenAIOAuthSeats(ctx context.Context) ([]Account, error) {
@@ -40,6 +41,16 @@ func (r *dppsSeatTestRepo) GetActiveGroupByName(ctx context.Context, name string
 func (r *dppsSeatTestRepo) SetAccountDppsGroups(ctx context.Context, accountID int64, groupNames []string, validateGroup func(*Group) error) (*DppsSetSeatGroupsResult, error) {
 	r.setCallCount++
 	return r.setGroupsFn(ctx, accountID, groupNames, validateGroup)
+}
+
+func (r *dppsSeatTestRepo) SetAccountSchedulingThreshold(_ context.Context, accountID int64, threshold *int) error {
+	r.thresholdCalls = append(r.thresholdCalls, dppsThresholdCall{accountID: accountID, threshold: threshold})
+	return nil
+}
+
+type dppsThresholdCall struct {
+	accountID int64
+	threshold *int
 }
 
 func (r *dppsSeatTestRepo) GetUsageWindow(ctx context.Context, accountID int64, since, until time.Time) ([]DppsUsageItem, error) {
@@ -349,7 +360,7 @@ func TestDppsSeatService_ListAndGetSeatsAllowlistAndNormalization(t *testing.T) 
 	allowedKeys := map[string]struct{}{
 		"id": {}, "name": {}, "status": {}, "schedulable": {}, "groups": {},
 		"used_percent_5h": {}, "reset_at_5h": {}, "used_percent_7d": {}, "reset_at_7d": {},
-		"created_at": {}, "last_error_class": {}, "subscription_expires_at": {},
+		"created_at": {}, "last_error_class": {}, "subscription_expires_at": {}, "paused_until": {}, "scheduling_threshold": {},
 	}
 	for _, item := range decoded {
 		for k := range item {
@@ -852,4 +863,52 @@ func TestDppsSeatTokenService_HashOnlyAndSettingsIsolation(t *testing.T) {
 	require.False(t, st3.Configured)
 	_, err = settingRepo.GetValue(context.Background(), DppsSettingKeySeatAPITokenHash)
 	require.ErrorIs(t, err, ErrSettingNotFound)
+}
+
+func TestDppsSeatService_PausedUntilAndSchedulingThreshold(t *testing.T) {
+	now := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	future := now.Add(2 * time.Hour)
+	past := now.Add(-time.Hour)
+	mk := func(id int64, until *time.Time, creds map[string]any) Account {
+		return Account{ID: id, Platform: PlatformOpenAI, Type: AccountTypeOAuth, CreatedAt: now, TempUnschedulableUntil: until, Credentials: creds}
+	}
+	accts := []Account{
+		mk(1, &future, map[string]any{"account_scheduling_threshold": int64(100), "access_token": "SENTINEL"}),
+		mk(2, &past, nil),
+		mk(3, nil, nil),
+	}
+	svc := NewDppsSeatService(&dppsSeatTestRepo{listFn: func(context.Context) ([]Account, error) { return accts, nil }}, nil, nil, nil, nil)
+	svc.now = func() time.Time { return now }
+	seats, err := svc.ListSeats(context.Background())
+	require.NoError(t, err)
+	require.Len(t, seats, 3)
+	require.NotNil(t, seats[0].PausedUntil)
+	require.True(t, seats[0].PausedUntil.Equal(future))
+	require.NotNil(t, seats[0].SchedulingThreshold)
+	require.Equal(t, 100, *seats[0].SchedulingThreshold)
+	require.Nil(t, seats[1].PausedUntil, "a pause in the past is not a pause")
+	require.Nil(t, seats[2].SchedulingThreshold)
+	raw, _ := json.Marshal(seats[0])
+	require.NotContains(t, string(raw), "SENTINEL")
+}
+
+func TestDppsSeatService_SetSeatSchedulingThresholdValidates(t *testing.T) {
+	repo := &dppsSeatTestRepo{}
+	svc := NewDppsSeatService(repo, nil, nil, nil, nil)
+	for _, bad := range []int{0, -1, 101} {
+		b := bad
+		_, err := svc.SetSeatSchedulingThreshold(context.Background(), 5, &b)
+		require.ErrorIs(t, err, ErrDppsInvalidRequest)
+	}
+	_, err := svc.SetSeatSchedulingThreshold(context.Background(), 0, nil)
+	require.ErrorIs(t, err, ErrDppsInvalidAccountID)
+	require.Empty(t, repo.thresholdCalls)
+	v := 100
+	res, err := svc.SetSeatSchedulingThreshold(context.Background(), 5, &v)
+	require.NoError(t, err)
+	require.Equal(t, 100, *res.SchedulingThreshold)
+	_, err = svc.SetSeatSchedulingThreshold(context.Background(), 5, nil)
+	require.NoError(t, err)
+	require.Len(t, repo.thresholdCalls, 2)
+	require.Nil(t, repo.thresholdCalls[1].threshold)
 }

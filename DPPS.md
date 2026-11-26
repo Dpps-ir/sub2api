@@ -12,7 +12,7 @@ additions:
    The JSON envelope, the `X-Event-Id` and `X-Event-Signature` headers and the event
    types (`seat.status`, ...) are a contract with DPPS's receiver: do not rename them.
 2. The **Seat API** (D-286): an isolated service-to-service API under `/api/v1/dpps/*`
-   (`GET /seats`, `GET /seats/:id`, `PUT /seats/:id/groups`, `POST /groups`,
+   (`GET /seats`, `GET /seats/:id`, `PUT /seats/:id/groups`, `PUT /seats/:id/scheduling-threshold` (D-312), `POST /groups`,
    `DELETE /groups/:id`, `PUT /keys/:id/group`, `GET /usage`) guarded by its own
    `X-DPPS-Seat-Token` (`dpps_seat_<64hex>`), constant-time SHA-256 verification
    against `settings` (`dpps_seat_api_token_hash`, `dpps_seat_api_token_meta`,

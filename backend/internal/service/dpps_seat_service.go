@@ -60,6 +60,17 @@ type DppsSeat struct {
 	CreatedAt             time.Time          `json:"created_at"`
 	LastErrorClass        string             `json:"last_error_class"`
 	SubscriptionExpiresAt *time.Time         `json:"subscription_expires_at,omitempty"`
+	// PausedUntil is temp_unschedulable_until while it lies in the future (the core's auto-pause, D-306), else nil.
+	PausedUntil *time.Time `json:"paused_until"`
+	// SchedulingThreshold is credentials.account_scheduling_threshold (the per-account pause override, D-312), nil when
+	// the account follows the platform setting.
+	SchedulingThreshold *int `json:"scheduling_threshold"`
+}
+
+// DppsSetSeatThresholdResult is returned by PUT /api/v1/dpps/seats/:id/scheduling-threshold.
+type DppsSetSeatThresholdResult struct {
+	ID                  int64 `json:"id"`
+	SchedulingThreshold *int  `json:"scheduling_threshold"`
 }
 
 // DppsSetSeatGroupsResult is returned by PUT /api/v1/dpps/seats/:id/groups.
@@ -121,6 +132,7 @@ type DppsSeatRepository interface {
 	GetOpenAIOAuthSeatByID(ctx context.Context, accountID int64) (*Account, error)
 	GetActiveGroupByName(ctx context.Context, name string) (*Group, error)
 	SetAccountDppsGroups(ctx context.Context, accountID int64, groupNames []string, validateGroup func(*Group) error) (*DppsSetSeatGroupsResult, error)
+	SetAccountSchedulingThreshold(ctx context.Context, accountID int64, threshold *int) error
 	GetUsageWindow(ctx context.Context, accountID int64, since, until time.Time) ([]DppsUsageItem, error)
 }
 
@@ -264,6 +276,23 @@ func (s *DppsSeatService) SetSeatGroups(ctx context.Context, accountID int64, gr
 		res.Groups = []DppsSeatGroupRef{}
 	}
 	return res, nil
+}
+
+// SetSeatSchedulingThreshold sets (1..100) or clears (nil) the account's own pause threshold (D-312).
+func (s *DppsSeatService) SetSeatSchedulingThreshold(ctx context.Context, accountID int64, threshold *int) (*DppsSetSeatThresholdResult, error) {
+	if accountID <= 0 {
+		return nil, ErrDppsInvalidAccountID
+	}
+	if threshold != nil && (*threshold < 1 || *threshold > 100) {
+		return nil, ErrDppsInvalidRequest
+	}
+	if s == nil || s.seatRepo == nil {
+		return nil, infraerrors.ServiceUnavailable("SEAT_SERVICE_UNAVAILABLE", "seat service unavailable")
+	}
+	if err := s.seatRepo.SetAccountSchedulingThreshold(ctx, accountID, threshold); err != nil {
+		return nil, err
+	}
+	return &DppsSetSeatThresholdResult{ID: accountID, SchedulingThreshold: threshold}, nil
 }
 
 // EnsureGroup idempotently creates or validates a dpps-pool or dpps-plan-* group.
@@ -518,7 +547,19 @@ func dppsAccountToSeat(acc *Account, now time.Time) DppsSeat {
 		subscriptionExpiresAt = &expUTC
 	}
 
+	var pausedUntil *time.Time
+	if acc.TempUnschedulableUntil != nil && now.Before(*acc.TempUnschedulableUntil) {
+		pu := acc.TempUnschedulableUntil.UTC()
+		pausedUntil = &pu
+	}
+	var schedulingThreshold *int
+	if v, ok := accountSchedulingThresholdOverride(acc); ok {
+		schedulingThreshold = &v
+	}
+
 	return DppsSeat{
+		PausedUntil:           pausedUntil,
+		SchedulingThreshold:   schedulingThreshold,
 		ID:                    acc.ID,
 		Name:                  acc.Name,
 		Status:                acc.Status,

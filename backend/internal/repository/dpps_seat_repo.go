@@ -66,7 +66,9 @@ func (r *dppsSeatRepository) ListOpenAIOAuthSeats(ctx context.Context) ([]servic
 			COALESCE(extra, '{}'::jsonb)::text,
 			created_at,
 			COALESCE(error_message, ''),
-			COALESCE((credentials -> 'subscription_expires_at')::text, '')
+			COALESCE((credentials -> 'subscription_expires_at')::text, ''),
+			COALESCE((credentials -> 'account_scheduling_threshold')::text, ''),
+			temp_unschedulable_until
 		FROM accounts
 		WHERE platform = $1
 		  AND type = $2
@@ -115,7 +117,9 @@ func (r *dppsSeatRepository) GetOpenAIOAuthSeatByID(ctx context.Context, account
 			COALESCE(extra, '{}'::jsonb)::text,
 			created_at,
 			COALESCE(error_message, ''),
-			COALESCE((credentials -> 'subscription_expires_at')::text, '')
+			COALESCE((credentials -> 'subscription_expires_at')::text, ''),
+			COALESCE((credentials -> 'account_scheduling_threshold')::text, ''),
+			temp_unschedulable_until
 		FROM accounts
 		WHERE id = $1
 		  AND platform = $2
@@ -420,6 +424,89 @@ func (r *dppsSeatRepository) SetAccountDppsGroups(
 	}, nil
 }
 
+// SetAccountSchedulingThreshold sets (threshold != nil) or removes (nil) credentials.account_scheduling_threshold on an
+// OpenAI OAuth account, touching no other credential key (D-312). It enqueues the scheduler's account event and syncs
+// the snapshot the way SetAccountDppsGroups does, so the next scheduling decision reads the new value.
+func (r *dppsSeatRepository) SetAccountSchedulingThreshold(ctx context.Context, accountID int64, threshold *int) error {
+	if r == nil {
+		return errors.New("dpps seat repository is not initialized")
+	}
+	var (
+		tx   *dbent.Tx
+		exec sqlExecutor
+	)
+	if r.client != nil {
+		var txErr error
+		tx, txErr = r.client.Tx(ctx)
+		if txErr != nil && !errors.Is(txErr, dbent.ErrTxStarted) {
+			return txErr
+		}
+		if txErr == nil {
+			defer func() { _ = tx.Rollback() }()
+			exec = tx.Client()
+		} else {
+			exec = r.client
+		}
+	} else {
+		exec = r.executor(ctx)
+	}
+	if exec == nil {
+		return errors.New("dpps seat repository is not initialized")
+	}
+
+	var platform, accType string
+	if err := scanSingleRow(ctx, exec, `
+		SELECT platform, type
+		FROM accounts
+		WHERE id = $1 AND deleted_at IS NULL
+		FOR UPDATE
+	`, []any{accountID}, &platform, &accType); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return service.ErrDppsSeatNotFound
+		}
+		return err
+	}
+	if platform != service.PlatformOpenAI || accType != service.AccountTypeOAuth {
+		return service.ErrDppsSeatNotFound
+	}
+
+	if threshold != nil {
+		if _, err := exec.ExecContext(ctx, `
+			UPDATE accounts
+			SET credentials = jsonb_set(COALESCE(credentials, '{}'::jsonb), '{account_scheduling_threshold}', to_jsonb($2::int), true),
+			    updated_at = NOW()
+			WHERE id = $1
+			  AND (credentials -> 'account_scheduling_threshold') IS DISTINCT FROM to_jsonb($2::int)
+		`, accountID, *threshold); err != nil {
+			return err
+		}
+	} else {
+		if _, err := exec.ExecContext(ctx, `
+			UPDATE accounts
+			SET credentials = credentials - 'account_scheduling_threshold',
+			    updated_at = NOW()
+			WHERE id = $1
+			  AND credentials ? 'account_scheduling_threshold'
+		`, accountID); err != nil {
+			return err
+		}
+	}
+
+	// Always enqueue, also when nothing changed: a repeat then repairs a snapshot an earlier call failed to sync.
+	if err := enqueueSchedulerOutbox(ctx, exec, service.SchedulerOutboxEventAccountChanged, &accountID, nil, nil); err != nil {
+		return err
+	}
+	if tx != nil {
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+	if r.client != nil && r.schedulerCache != nil {
+		newAccountRepositoryWithSQL(r.client, r.sql, r.schedulerCache).syncSchedulerAccountSnapshot(ctx, accountID)
+	}
+	return nil
+}
+
 func (r *dppsSeatRepository) GetUsageWindow(ctx context.Context, accountID int64, since, until time.Time) ([]service.DppsUsageItem, error) {
 	exec := r.executor(ctx)
 	if exec == nil {
@@ -480,6 +567,8 @@ func dppsScanSeatAccountRow(rows *sql.Rows) (service.Account, error) {
 		acc       service.Account
 		extraRaw  string
 		subExpRaw string
+		thrRaw    string
+		pausedAt  sql.NullTime
 	)
 	if err := rows.Scan(
 		&acc.ID,
@@ -492,6 +581,8 @@ func dppsScanSeatAccountRow(rows *sql.Rows) (service.Account, error) {
 		&acc.CreatedAt,
 		&acc.ErrorMessage,
 		&subExpRaw,
+		&thrRaw,
+		&pausedAt,
 	); err != nil {
 		return service.Account{}, err
 	}
@@ -507,14 +598,26 @@ func dppsScanSeatAccountRow(rows *sql.Rows) (service.Account, error) {
 		acc.Extra = extra
 	}
 
-	subExpTrimmed := strings.TrimSpace(subExpRaw)
-	if subExpTrimmed != "" && subExpTrimmed != "null" {
-		dec := json.NewDecoder(strings.NewReader(subExpTrimmed))
-		dec.UseNumber()
-		var subExpVal any
-		if err := dec.Decode(&subExpVal); err == nil && subExpVal != nil {
-			acc.Credentials = map[string]any{"subscription_expires_at": subExpVal}
+	// D-312: only these two credential keys leave the SELECT: the subscription date and the numeric per-account
+	// pause override. Every other credential key stays in the database.
+	for key, raw := range map[string]string{"subscription_expires_at": subExpRaw, "account_scheduling_threshold": thrRaw} {
+		trimmed := strings.TrimSpace(raw)
+		if trimmed == "" || trimmed == "null" {
+			continue
 		}
+		dec := json.NewDecoder(strings.NewReader(trimmed))
+		dec.UseNumber()
+		var val any
+		if err := dec.Decode(&val); err == nil && val != nil {
+			if acc.Credentials == nil {
+				acc.Credentials = map[string]any{}
+			}
+			acc.Credentials[key] = val
+		}
+	}
+	if pausedAt.Valid {
+		t := pausedAt.Time.UTC()
+		acc.TempUnschedulableUntil = &t
 	}
 
 	return acc, nil

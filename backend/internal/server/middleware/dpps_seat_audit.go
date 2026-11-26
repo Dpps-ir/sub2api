@@ -26,26 +26,28 @@ const (
 )
 
 var dppsSeatAuditActions = map[string]string{
-	"PUT /api/v1/dpps/seats/:id/groups": "dpps.seats.groups.update",
-	"POST /api/v1/dpps/groups":          "dpps.groups.ensure",
-	"DELETE /api/v1/dpps/groups/:id":    "dpps.groups.delete",
-	"PUT /api/v1/dpps/keys/:id/group":   "dpps.keys.group.bind",
+	"PUT /api/v1/dpps/seats/:id/groups":               "dpps.seats.groups.update",
+	"PUT /api/v1/dpps/seats/:id/scheduling-threshold": "dpps.seats.threshold.update",
+	"POST /api/v1/dpps/groups":                        "dpps.groups.ensure",
+	"DELETE /api/v1/dpps/groups/:id":                  "dpps.groups.delete",
+	"PUT /api/v1/dpps/keys/:id/group":                 "dpps.keys.group.bind",
 }
 
 var dppsSeatAuditExtraAllowedKeys = map[string]struct{}{
-	"account_id":   {},
-	"group_id":     {},
-	"key_id":       {},
-	"group_name":   {},
-	"dpps_groups":  {},
-	"groups":       {},
-	"groups_count": {},
-	"created":      {},
-	"deleted":      {},
-	"status":       {},
-	"result":       {},
-	"reason":       {},
-	"error_code":   {},
+	"account_id":           {},
+	"group_id":             {},
+	"key_id":               {},
+	"group_name":           {},
+	"dpps_groups":          {},
+	"groups":               {},
+	"groups_count":         {},
+	"scheduling_threshold": {},
+	"created":              {},
+	"deleted":              {},
+	"status":               {},
+	"result":               {},
+	"reason":               {},
+	"error_code":           {},
 }
 
 // DppsSeatAuditMiddleware records one synchronous audit_logs row per authenticated

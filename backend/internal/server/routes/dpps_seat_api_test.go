@@ -484,6 +484,29 @@ func (r *dppsAPISeatRepo) SetAccountDppsGroups(
 	}, nil
 }
 
+func (r *dppsAPISeatRepo) SetAccountSchedulingThreshold(_ context.Context, accountID int64, threshold *int) error {
+	r.st.mu.Lock()
+	defer r.st.mu.Unlock()
+	acc, ok := r.st.accounts[accountID]
+	if !ok || acc.Platform != service.PlatformOpenAI || acc.Type != service.AccountTypeOAuth {
+		return service.ErrDppsSeatNotFound
+	}
+	if acc.Credentials == nil {
+		acc.Credentials = map[string]any{}
+	}
+	if threshold == nil {
+		delete(acc.Credentials, "account_scheduling_threshold")
+	} else {
+		acc.Credentials["account_scheduling_threshold"] = *threshold
+	}
+	r.st.mutateCount++
+	r.st.outboxEvents = append(r.st.outboxEvents, map[string]any{
+		"event":      service.SchedulerOutboxEventAccountChanged,
+		"account_id": accountID,
+	})
+	return nil
+}
+
 func (r *dppsAPISeatRepo) GetUsageWindow(_ context.Context, accountID int64, since, until time.Time) ([]service.DppsUsageItem, error) {
 	r.st.mu.Lock()
 	defer r.st.mu.Unlock()
@@ -1280,6 +1303,7 @@ func TestSeatAPI_NeverReturnsCredentials(t *testing.T) {
 	future7d := now.Add(96 * time.Hour).Format(time.RFC3339)
 	autoPauseAt := now.Add(12 * time.Hour)
 	secretNotes := "SENTINEL_ACCOUNT_NOTES"
+	pausedAt := now.Add(3 * time.Hour).Truncate(time.Second)
 
 	st.accounts[12] = &service.Account{
 		ID:          12,
@@ -1292,13 +1316,15 @@ func TestSeatAPI_NeverReturnsCredentials(t *testing.T) {
 		CreatedAt:   time.Date(2026, 11, 20, 9, 0, 0, 0, time.UTC),
 		ExpiresAt:   &autoPauseAt,
 		Credentials: map[string]any{
-			"access_token":            "SENTINEL_ACCESS_TOKEN",
-			"refresh_token":           "SENTINEL_REFRESH_TOKEN",
-			"id_token":                "SENTINEL_ID_TOKEN",
-			"email":                   "SENTINEL_CRED_EMAIL@vendor.secret",
-			"password":                "SENTINEL_CRED_PASSWORD",
-			"subscription_expires_at": "2026-12-20T09:00:00Z",
+			"access_token":                 "SENTINEL_ACCESS_TOKEN",
+			"refresh_token":                "SENTINEL_REFRESH_TOKEN",
+			"id_token":                     "SENTINEL_ID_TOKEN",
+			"email":                        "SENTINEL_CRED_EMAIL@vendor.secret",
+			"password":                     "SENTINEL_CRED_PASSWORD",
+			"subscription_expires_at":      "2026-12-20T09:00:00Z",
+			"account_scheduling_threshold": 100,
 		},
+		TempUnschedulableUntil: &pausedAt,
 		Extra: map[string]any{
 			"email":                 "SENTINEL_EXTRA_EMAIL@vendor.secret",
 			"account_name":          "SENTINEL_EXTRA_NAME",
@@ -1384,6 +1410,7 @@ func TestSeatAPI_NeverReturnsCredentials(t *testing.T) {
 		"id": {}, "name": {}, "status": {}, "schedulable": {}, "groups": {},
 		"used_percent_5h": {}, "reset_at_5h": {}, "used_percent_7d": {}, "reset_at_7d": {},
 		"created_at": {}, "last_error_class": {}, "subscription_expires_at": {},
+		"paused_until": {}, "scheduling_threshold": {},
 	}
 	var listEnv struct {
 		Code int `json:"code"`
@@ -1402,6 +1429,12 @@ func TestSeatAPI_NeverReturnsCredentials(t *testing.T) {
 	require.Contains(t, listEnv.Data.Seats[0], "subscription_expires_at")
 	require.NotContains(t, listEnv.Data.Seats[1], "subscription_expires_at", "subscription_expires_at must be omitted when absent")
 	require.Equal(t, "forbidden", listEnv.Data.Seats[0]["last_error_class"])
+	// D-312: the one numeric credential override and the pause end are the only additions; both keys are always present.
+	require.EqualValues(t, 100, listEnv.Data.Seats[0]["scheduling_threshold"])
+	require.Equal(t, pausedAt.Format(time.RFC3339), listEnv.Data.Seats[0]["paused_until"])
+	require.Contains(t, listEnv.Data.Seats[1], "scheduling_threshold")
+	require.Nil(t, listEnv.Data.Seats[1]["scheduling_threshold"])
+	require.Nil(t, listEnv.Data.Seats[1]["paused_until"])
 	// D-303: the seat carries accounts.name (the core admin's account title) and nothing else of the identity.
 	require.Equal(t, "seat-twelve@core.example", listEnv.Data.Seats[0]["name"])
 	require.Equal(t, "seat-thirteen@core.example", listEnv.Data.Seats[1]["name"])
@@ -1846,7 +1879,7 @@ func TestSeatAPI_AuditRowPerWrite(t *testing.T) {
 	require.Equal(t, http.StatusUnauthorized, w401.Code)
 	require.Empty(t, auditSpy.snapshot())
 
-	// 3-8. Six authenticated writes (incl. idempotent repeat and authenticated 400).
+	// 3-9. Seven authenticated writes (incl. idempotent repeat and authenticated 400).
 	writes := []struct {
 		method     string
 		path       string
@@ -1860,6 +1893,7 @@ func TestSeatAPI_AuditRowPerWrite(t *testing.T) {
 		{http.MethodPut, "/api/v1/dpps/seats/42/groups", `{"groups":["default"]}`, http.StatusBadRequest, "dpps.seats.groups.update"},
 		{http.MethodPut, "/api/v1/dpps/keys/500/group", `{"group_id":10}`, http.StatusOK, "dpps.keys.group.bind"},
 		{http.MethodDelete, "/api/v1/dpps/groups/11", "", http.StatusOK, "dpps.groups.delete"},
+		{http.MethodPut, "/api/v1/dpps/seats/42/scheduling-threshold", `{"threshold":100}`, http.StatusOK, "dpps.seats.threshold.update"},
 	}
 
 	for i, wtc := range writes {
@@ -1870,7 +1904,7 @@ func TestSeatAPI_AuditRowPerWrite(t *testing.T) {
 	}
 
 	rows := auditSpy.snapshot()
-	require.Len(t, rows, 6)
+	require.Len(t, rows, 7)
 	for i, row := range rows {
 		require.Nil(t, row.ActorUserID)
 		require.Empty(t, row.ActorEmail)
@@ -1944,4 +1978,55 @@ func TestSeatAPI_AuditRowPerWrite(t *testing.T) {
 	require.Equal(t, http.StatusTooManyRequests, wIPv6Blocked.Code)
 	require.NotEmpty(t, wIPv6Blocked.Header().Get("Retry-After"))
 	require.Equal(t, authCallsBefore+5, authRepoCalls, "pre-auth limiter must block before auth DB lookup")
+}
+
+// D-312: PUT /seats/:id/scheduling-threshold sets or clears the one credential key, validates 1..100/null, answers 404
+// for a non-OpenAI-OAuth account, and writes one audit row with its own action name.
+func TestSeatAPI_SchedulingThresholdRoute(t *testing.T) {
+	st := newDppsAPIState()
+	st.accounts[42] = &service.Account{
+		ID: 42, Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth, Status: service.StatusActive,
+		Schedulable: true, CreatedAt: time.Now().UTC(),
+		Credentials: map[string]any{"access_token": "SENTINEL_TOKEN"},
+	}
+	st.accounts[43] = &service.Account{ID: 43, Platform: service.PlatformAnthropic, Type: service.AccountTypeOAuth, CreatedAt: time.Now().UTC()}
+	settingRepo := newDppsAPISettingRepo()
+	auditSpy := &dppsAPIAuditSpy{}
+	r, _, _ := newDppsSeatTestRouter(st, settingRepo, auditSpy, nil, middleware.DppsSeatRateLimitConfig{})
+	hdr := map[string]string{service.DppsSeatTokenHeader: seedSeatTokenInRepo(t, settingRepo)}
+	put := func(path, body string) *httptest.ResponseRecorder {
+		return doSeatJSONReq(r, http.MethodPut, path, body, hdr, "127.0.0.1:1001")
+	}
+
+	w := put("/api/v1/dpps/seats/42/scheduling-threshold", `{"threshold":100}`)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	require.Equal(t, 100, st.accounts[42].Credentials["account_scheduling_threshold"])
+	require.Equal(t, "SENTINEL_TOKEN", st.accounts[42].Credentials["access_token"])
+	require.NotContains(t, w.Body.String(), "SENTINEL_TOKEN")
+	require.Equal(t, http.StatusOK, put("/api/v1/dpps/seats/42/scheduling-threshold", `{"threshold":100}`).Code, "idempotent")
+
+	g := doSeatJSONReq(r, http.MethodGet, "/api/v1/dpps/seats/42", "", hdr, "127.0.0.1:1001")
+	require.Contains(t, g.Body.String(), `"scheduling_threshold":100`)
+
+	for _, bad := range []string{`{}`, `{"threshold":0}`, `{"threshold":101}`, `{"threshold":-5}`, `{"threshold":50.5}`, `{"threshold":"100"}`, `{"threshold":true}`, `{"threshold":100,"x":1}`, ``} {
+		require.Equal(t, http.StatusBadRequest, put("/api/v1/dpps/seats/42/scheduling-threshold", bad).Code, "body %q", bad)
+	}
+	require.Equal(t, 100, st.accounts[42].Credentials["account_scheduling_threshold"], "bad bodies must not change the value")
+	require.Equal(t, http.StatusBadRequest, put("/api/v1/dpps/seats/abc/scheduling-threshold", `{"threshold":null}`).Code)
+	require.Equal(t, http.StatusNotFound, put("/api/v1/dpps/seats/43/scheduling-threshold", `{"threshold":100}`).Code)
+	require.Equal(t, http.StatusNotFound, put("/api/v1/dpps/seats/999/scheduling-threshold", `{"threshold":null}`).Code)
+
+	require.Equal(t, http.StatusOK, put("/api/v1/dpps/seats/42/scheduling-threshold", `{"threshold":null}`).Code)
+	_, has := st.accounts[42].Credentials["account_scheduling_threshold"]
+	require.False(t, has)
+	require.Equal(t, "SENTINEL_TOKEN", st.accounts[42].Credentials["access_token"])
+
+	require.Equal(t, http.StatusUnauthorized, doSeatJSONReq(r, http.MethodPut, "/api/v1/dpps/seats/42/scheduling-threshold", `{"threshold":100}`, nil, "127.0.0.1:1001").Code)
+
+	rows := auditSpy.snapshot()
+	require.NotEmpty(t, rows)
+	for _, row := range rows {
+		require.Equal(t, "dpps.seats.threshold.update", row.Action)
+		require.Equal(t, "dpps_seat_api", row.ActorRole)
+	}
 }

@@ -19,6 +19,7 @@ type DppsSeatServicer interface {
 	ListSeats(ctx context.Context) ([]service.DppsSeat, error)
 	GetSeat(ctx context.Context, accountID int64) (*service.DppsSeat, error)
 	SetSeatGroups(ctx context.Context, accountID int64, groupNames []string) (*service.DppsSetSeatGroupsResult, error)
+	SetSeatSchedulingThreshold(ctx context.Context, accountID int64, threshold *int) (*service.DppsSetSeatThresholdResult, error)
 	EnsureGroup(ctx context.Context, name string) (*service.DppsEnsureGroupResult, error)
 	DeleteEmptyPlanGroup(ctx context.Context, groupID int64) (*service.DppsDeleteGroupResult, error)
 	BindKeyGroup(ctx context.Context, keyID, groupID int64) (*service.DppsBindKeyGroupResult, error)
@@ -129,6 +130,44 @@ func (h *DppsSeatHandler) SetSeatGroups(c *gin.Context) {
 		"result":       "ok",
 	})
 	response.Success(c, out)
+}
+
+// SetSeatSchedulingThreshold handles PUT /api/v1/dpps/seats/:id/scheduling-threshold (D-312).
+func (h *DppsSeatHandler) SetSeatSchedulingThreshold(c *gin.Context) {
+	accountID, ok := dppsParsePositiveInt64(c.Param("id"))
+	if !ok {
+		dppsWriteError(c, http.StatusBadRequest, "invalid account id", "INVALID_ACCOUNT_ID")
+		return
+	}
+	var req DppsSetSeatThresholdRequest
+	if reason, msg := dppsDecodeStrictJSON(c, &req); reason != "" {
+		dppsWriteError(c, http.StatusBadRequest, msg, reason)
+		return
+	}
+	threshold, valid := dppsParseThreshold(req.Threshold)
+	if !valid {
+		dppsWriteError(c, http.StatusBadRequest, "threshold must be an integer 1..100 or null", "INVALID_REQUEST")
+		return
+	}
+	svc := h.service(c)
+	if svc == nil {
+		return
+	}
+	res, err := svc.SetSeatSchedulingThreshold(c.Request.Context(), accountID, threshold)
+	if err != nil {
+		dppsHandleServiceError(c, err)
+		return
+	}
+	if res == nil {
+		dppsWriteError(c, http.StatusInternalServerError, "internal server error", "INTERNAL_ERROR")
+		return
+	}
+	extra := map[string]any{"account_id": res.ID, "result": "ok"}
+	if res.SchedulingThreshold != nil {
+		extra["scheduling_threshold"] = *res.SchedulingThreshold
+	}
+	dppsSetAuditExtra(c, extra)
+	response.Success(c, DppsSetSeatThresholdResponseDTO{ID: res.ID, SchedulingThreshold: res.SchedulingThreshold})
 }
 
 // EnsureGroup handles POST /api/v1/dpps/groups.
