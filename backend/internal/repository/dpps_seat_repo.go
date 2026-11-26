@@ -58,6 +58,7 @@ func (r *dppsSeatRepository) ListOpenAIOAuthSeats(ctx context.Context) ([]servic
 	rows, err := exec.QueryContext(ctx, `
 		SELECT
 			id,
+			COALESCE(name, ''),
 			platform,
 			type,
 			status,
@@ -106,6 +107,7 @@ func (r *dppsSeatRepository) GetOpenAIOAuthSeatByID(ctx context.Context, account
 	rows, err := exec.QueryContext(ctx, `
 		SELECT
 			id,
+			COALESCE(name, ''),
 			platform,
 			type,
 			status,
@@ -481,6 +483,7 @@ func dppsScanSeatAccountRow(rows *sql.Rows) (service.Account, error) {
 	)
 	if err := rows.Scan(
 		&acc.ID,
+		&acc.Name, // D-303: the title the core's admin list shows; the only identity field the Seat API answers
 		&acc.Platform,
 		&acc.Type,
 		&acc.Status,

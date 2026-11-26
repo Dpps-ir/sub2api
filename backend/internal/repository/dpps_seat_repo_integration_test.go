@@ -62,3 +62,33 @@ func TestDppsSeatRepo_PlanGroupMakesSeatExclusive(t *testing.T) {
 		}
 	}
 }
+
+// D-303: the Seat API answers each account's name. The live core answered "" for every seat on 2026-11-26 because
+// these queries never selected the column; a fake repository in the service test could not see that.
+func TestDppsSeatRepo_SeatsCarryTheAccountName(t *testing.T) {
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	acc := mustCreateAccount(t, integrationEntClient, &service.Account{Name: "named-seat-" + suffix + "@example.com", Platform: service.PlatformOpenAI, Type: service.AccountTypeOAuth})
+	repo := NewDppsSeatRepository(integrationEntClient, integrationDB, nil)
+
+	got, err := repo.GetOpenAIOAuthSeatByID(ctx, acc.ID)
+	if err != nil {
+		t.Fatalf("get seat: %v", err)
+	}
+	if got.Name != acc.Name {
+		t.Fatalf("get: name %q, want %q", got.Name, acc.Name)
+	}
+	list, err := repo.ListOpenAIOAuthSeats(ctx)
+	if err != nil {
+		t.Fatalf("list seats: %v", err)
+	}
+	for _, s := range list {
+		if s.ID == acc.ID {
+			if s.Name != acc.Name {
+				t.Fatalf("list: name %q, want %q", s.Name, acc.Name)
+			}
+			return
+		}
+	}
+	t.Fatalf("seat %d not listed", acc.ID)
+}
