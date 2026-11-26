@@ -45,9 +45,11 @@ type DppsSeatGroupRef struct {
 	Name string `json:"name"`
 }
 
-// DppsSeat is the strict 11-field credential-free seat projection returned by the Seat API.
+// DppsSeat is the strict 12-field credential-free seat projection returned by the Seat API.
+// Name is accounts.name, the title the core's own admin list shows for the account (D-303).
 type DppsSeat struct {
 	ID                    int64              `json:"id"`
+	Name                  string             `json:"name"`
 	Status                string             `json:"status"`
 	Schedulable           bool               `json:"schedulable"`
 	Groups                []DppsSeatGroupRef `json:"groups"`
@@ -518,6 +520,7 @@ func dppsAccountToSeat(acc *Account, now time.Time) DppsSeat {
 
 	return DppsSeat{
 		ID:                    acc.ID,
+		Name:                  acc.Name,
 		Status:                acc.Status,
 		Schedulable:           acc.Schedulable,
 		Groups:                groups,

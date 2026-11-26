@@ -46,9 +46,10 @@ type DppsSeatGroupRefDTO struct {
 	Name string `json:"name"`
 }
 
-// DppsSeatDTO is the strict 11-field credential-free seat representation (§2.1).
+// DppsSeatDTO is the strict 12-field credential-free seat representation (§2.1).
 type DppsSeatDTO struct {
 	ID                    int64                 `json:"id"`
+	Name                  string                `json:"name"`
 	Status                string                `json:"status"`
 	Schedulable           bool                  `json:"schedulable"`
 	Groups                []DppsSeatGroupRefDTO `json:"groups"`
@@ -244,6 +245,7 @@ func dppsGroupRefsFromService(refs []service.DppsSeatGroupRef) []DppsSeatGroupRe
 func dppsSeatFromService(s service.DppsSeat) DppsSeatDTO {
 	return DppsSeatDTO{
 		ID:                    s.ID,
+		Name:                  s.Name,
 		Status:                s.Status,
 		Schedulable:           s.Schedulable,
 		Groups:                dppsGroupRefsFromService(s.Groups),

@@ -220,7 +220,7 @@ func TestDppsSeatService_ListAndGetSeatsAllowlistAndNormalization(t *testing.T) 
 
 	acc1 := Account{
 		ID:          1,
-		Name:        "CANARY-NAME-alice@secret.test",
+		Name:        "alice@core.example",
 		Notes:       &notesSecret,
 		Platform:    PlatformOpenAI,
 		Type:        AccountTypeOAuth,
@@ -342,10 +342,12 @@ func TestDppsSeatService_ListAndGetSeatsAllowlistAndNormalization(t *testing.T) 
 		require.NotContains(t, rawStr, canary)
 	}
 
+	require.Equal(t, "alice@core.example", seats[0].Name, "D-303: seat carries accounts.name")
+
 	var decoded []map[string]any
 	require.NoError(t, json.Unmarshal(raw, &decoded))
 	allowedKeys := map[string]struct{}{
-		"id": {}, "status": {}, "schedulable": {}, "groups": {},
+		"id": {}, "name": {}, "status": {}, "schedulable": {}, "groups": {},
 		"used_percent_5h": {}, "reset_at_5h": {}, "used_percent_7d": {}, "reset_at_7d": {},
 		"created_at": {}, "last_error_class": {}, "subscription_expires_at": {},
 	}

@@ -1283,7 +1283,7 @@ func TestSeatAPI_NeverReturnsCredentials(t *testing.T) {
 
 	st.accounts[12] = &service.Account{
 		ID:          12,
-		Name:        "SENTINEL_EMAIL_NAME@vendor.secret",
+		Name:        "seat-twelve@core.example",
 		Notes:       &secretNotes,
 		Platform:    service.PlatformOpenAI,
 		Type:        service.AccountTypeOAuth,
@@ -1322,7 +1322,7 @@ func TestSeatAPI_NeverReturnsCredentials(t *testing.T) {
 	// Second OpenAI OAuth account WITHOUT subscription_expires_at (must omit key).
 	st.accounts[13] = &service.Account{
 		ID:          13,
-		Name:        "SENTINEL_SECOND_EMAIL@vendor.secret",
+		Name:        "seat-thirteen@core.example",
 		Platform:    service.PlatformOpenAI,
 		Type:        service.AccountTypeOAuth,
 		Status:      service.StatusActive,
@@ -1381,7 +1381,7 @@ func TestSeatAPI_NeverReturnsCredentials(t *testing.T) {
 
 	// Strict 11-field schema check on GET /seats and GET /seats/12.
 	allowedSeatKeys := map[string]struct{}{
-		"id": {}, "status": {}, "schedulable": {}, "groups": {},
+		"id": {}, "name": {}, "status": {}, "schedulable": {}, "groups": {},
 		"used_percent_5h": {}, "reset_at_5h": {}, "used_percent_7d": {}, "reset_at_7d": {},
 		"created_at": {}, "last_error_class": {}, "subscription_expires_at": {},
 	}
@@ -1402,6 +1402,9 @@ func TestSeatAPI_NeverReturnsCredentials(t *testing.T) {
 	require.Contains(t, listEnv.Data.Seats[0], "subscription_expires_at")
 	require.NotContains(t, listEnv.Data.Seats[1], "subscription_expires_at", "subscription_expires_at must be omitted when absent")
 	require.Equal(t, "forbidden", listEnv.Data.Seats[0]["last_error_class"])
+	// D-303: the seat carries accounts.name (the core admin's account title) and nothing else of the identity.
+	require.Equal(t, "seat-twelve@core.example", listEnv.Data.Seats[0]["name"])
+	require.Equal(t, "seat-thirteen@core.example", listEnv.Data.Seats[1]["name"])
 
 	var oneEnv struct {
 		Code int            `json:"code"`
@@ -1412,6 +1415,7 @@ func TestSeatAPI_NeverReturnsCredentials(t *testing.T) {
 		_, ok := allowedSeatKeys[k]
 		require.True(t, ok, "unexpected JSON key %q in single-seat payload", k)
 	}
+	require.Equal(t, "seat-twelve@core.example", oneEnv.Data["name"])
 
 	// Zero sentinel strings anywhere in responses or logs.
 	combined := strings.Join([]string{

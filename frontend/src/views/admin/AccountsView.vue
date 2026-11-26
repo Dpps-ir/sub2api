@@ -2584,6 +2584,11 @@ onMounted(async () => {
     }
   }
 
+  // Deep link from DPPS admin: /admin/accounts?search=<account name> opens the list filtered to that account.
+  if (typeof window !== 'undefined') {
+    const linkedSearch = new URLSearchParams(window.location.search).get('search')
+    if (linkedSearch) params.search = linkedSearch
+  }
   load()
   loadUpstreamBillingProbeGlobalState()
   const [proxiesResult, groupsResult] = await Promise.allSettled([
